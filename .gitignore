@@ -1,0 +1,23 @@
+# Tudo o que é da pessoa fica em dados/ e nunca vai para o repositório:
+# dados do negócio, conversas, agenda, materiais e a sessão do WhatsApp.
+dados/
+
+# Programa compilado e o Go baixado pelo instalador
+atendente
+atendente.exe
+.go-sdk/
+
+# Arquivos de quando o atendente está rodando
+*.log
+atendente.pid
+porta.txt
+
+# Arquivos da primeira versão, que ficavam soltos na pasta
+sessao.db*
+leads.json*
+config.json*
+/personalidade.md*
+/cerebro.md*
+/regras-transbordo.md*
+
+.DS_Store
