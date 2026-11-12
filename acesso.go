@@ -70,6 +70,10 @@ func nivelDaRota(metodo, caminho string) int {
 	switch caminho {
 	case "/api/sessao", "/api/entrar", "/api/sair", "/api/primeiro-acesso", "/api/redefinir-senha":
 		return nivelLivre
+	case "/api/ouvido/inicio", "/api/ouvido/proximo", "/api/ouvido/resultado":
+		// Rotas do navegador escondido que transcreve os audios. Nao ha sessao: cada uma
+		// confere a chave secreta do ouvinte, sorteada a cada vez que o programa liga.
+		return nivelLivre
 	case "/api/usuarios", "/api/usuarios/alterar", "/api/usuarios/excluir", "/api/registro":
 		return nivelSuper
 	case "/api/liga", "/api/whatsapp/desconectar", "/qr.png", "/api/lead/excluir",
@@ -87,10 +91,6 @@ func nivelDaRota(metodo, caminho string) int {
 		return nivelLogado
 	}
 	if strings.HasPrefix(caminho, "/api/") || strings.HasSuffix(caminho, ".csv") {
-		return nivelLogado
-	}
-	// Arquivos do reconhecimento de voz: só para quem entrou (voz.go confere de novo).
-	if strings.HasPrefix(caminho, "/voz/") {
 		return nivelLogado
 	}
 	return nivelLivre // os arquivos da pagina (a tela de entrada precisa deles)

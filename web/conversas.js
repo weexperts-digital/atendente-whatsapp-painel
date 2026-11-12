@@ -1084,7 +1084,11 @@
     }
     if (temMidia) bolha.appendChild(elMidia(m, tipo, quem));
     const texto = m.texto == null ? '' : String(m.texto);
-    if (texto.trim()) {
+    if (texto.trim() && tipo === 'audio' && !doNegocio) {
+      // Áudio do cliente: o texto é a transcrição feita neste computador.
+      bolha.appendChild(h('p', { class: 'cv-texto cv-transcricao' },
+        h('span', { class: 'cv-transcricao-rotulo', text: 'Transcrição do áudio' }), texto));
+    } else if (texto.trim()) {
       bolha.appendChild(h('p', { class: 'cv-texto', text: texto }));
     } else if (!temMidia) {
       // Mídia que não pôde ser baixada, sem legenda: a bolha diz o que era.

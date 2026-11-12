@@ -18,6 +18,7 @@ func main() {
 	simular := flag.String("simular", "", "passa uma mensagem pelo cérebro, sem WhatsApp, e mostra o resultado")
 	mostrarVersao := flag.Bool("versao", false, "mostra a versão e sai")
 	esqueciSenha := flag.Bool("esqueci-senha", false, "abre, por alguns minutos, a tela para criar uma senha nova do super administrador")
+	ouvir := flag.String("ouvir", "", "transcreve um arquivo de áudio do WhatsApp (.ogg) e mostra o texto, para conferir o ouvido")
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime)
 
@@ -39,6 +40,10 @@ func main() {
 	}
 
 	app := novoApp()
+	if *ouvir != "" {
+		// Teste do ouvido: não abre o banco nem o WhatsApp, só transcreve o arquivo.
+		os.Exit(app.ouvirTesteDeLinha(*ouvir))
+	}
 	app.carregar()
 	app.cofre = novoCofreDoSistema()
 	app.carregarChaveOpenAI()
@@ -51,6 +56,7 @@ func main() {
 	go app.cuidarDoBanco()
 	go app.vigiarIA()
 	go app.prepararVoz()
+	go ouvidoDoPainel.vigiar()
 
 	if _, err := app.iniciarPainel(); err != nil {
 		log.Fatalf("ERRO: não consegui abrir o painel: %v", err)
@@ -58,6 +64,12 @@ func main() {
 
 	ctx, cancelar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancelar()
+	go func() {
+		<-ctx.Done() // o programa esta saindo: o navegador escondido do ouvido fecha junto
+		ouvidoDoPainel.mu.Lock()
+		ouvidoDoPainel.encerrar()
+		ouvidoDoPainel.mu.Unlock()
+	}()
 
 	if err := app.iniciarWhats(ctx); err != nil {
 		app.definirStatus("desconectado", "Desconectado")

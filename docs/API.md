@@ -513,7 +513,7 @@ Na aba Contatos, clicar em uma linha abre `#contatos/<id>` (a ficha). A conversa
 
 - `GET /api/voz/estado` (quem está logado): `{ "ok", "pronto", "baixando", "progresso", "erro", "tamanho_mb", "arquivos": { "biblioteca", "wasm_mjs", "wasm", "modelos", "modelo" } }`. `progresso` vai de 0 a 100.
 - `POST /api/voz/preparar` (quem está logado, corpo `{}`): começa ou tenta de novo o download. Mesma resposta.
-- `GET /voz/...` (quem está logado): os arquivos da voz, baixados para `dados/voz/`. Só entrega o que está na lista fixa de `voz.go` e já teve o SHA-256 conferido.
+- `GET /voz/...` (quem está logado, ou o ouvinte dos áudios, ver a versão 2.7): os arquivos da voz, baixados para `dados/voz/`. Só entrega o que está na lista fixa de `voz.go` e já teve o SHA-256 conferido.
 - Na página, `VOZ.botao({ aoTexto(texto, final), aoEstado(estado, info) })` devolve o botão do microfone. `texto` é sempre o texto inteiro da gravação até ali. `microfoneDe(area, obj, chave, aoTerminar)`, em `base.js`, liga esse botão a uma caixa de texto.
 
 ## Versão 2.6: página Início
@@ -545,3 +545,25 @@ Na aba Contatos, clicar em uma linha abre `#contatos/<id>` (a ficha). A conversa
 
 Na página, a aba é `#visao` e é a tela de chegada: endereço vazio ou desconhecido cai nela.
 
+## Versão 2.7: áudios do WhatsApp transcritos
+
+O áudio que o cliente manda é transcrito neste computador e o assistente responde por texto. Detalhes em `ouvido.go` e na seção "Áudios do WhatsApp" do `CLAUDE.md`.
+
+### O que mudou para a página
+
+- `GET /api/estado` ganhou `ouve_audio` (verdadeiro quando o programa consegue transcrever agora: a voz já foi baixada e há um navegador da família do Chrome) e `tem_navegador`.
+- Mensagem de `cliente` com `tipo` igual a `audio` pode trazer `texto`: é a transcrição. Ela chega alguns segundos depois do áudio, na mesma mensagem. A página mostra embaixo do tocador, com o rótulo "Transcrição do áudio". Áudio sem `texto` ainda não foi transcrito ou não pôde ser.
+
+### Rotas do ouvinte (só o navegador escondido usa)
+
+Estas rotas não usam a sessão do painel. Pedem a chave secreta do ouvinte, sorteada a cada vez que o programa liga. Sem a chave, respondem 404.
+
+- `GET /ouvinte.html?c=CHAVE`: a página do ouvinte. Guarda a chave no cookie `ouvinte_PORTA` (`HttpOnly`, `SameSite=Strict`).
+- `GET /api/ouvido/inicio`: `{ "arquivos": { ... } }`, os mesmos endereços de `GET /api/voz/estado`, para carregar o Whisper.
+- `GET /api/ouvido/proximo`: espera até 20 segundos por trabalho. `200` traz um trecho de som no corpo (números de 32 bits com vírgula, little-endian, 16 kHz, um canal) e o cabeçalho `X-Trecho` com o código do trecho. `204` quer dizer "nada agora, pergunte de novo". `410` quer dizer "pode fechar".
+- `POST /api/ouvido/resultado?id=TRECHO`: corpo `{ "texto": "..." }` ou `{ "erro": "..." }`.
+- `GET /voz/...` aceita a sessão do painel ou a chave do ouvinte.
+
+### Linha de comando
+
+`./atendente -ouvir arquivo.ogg` transcreve um arquivo e mostra o tempo e o texto. Usa uma porta livre e um perfil temporário, sem mexer no atendente que está no ar.

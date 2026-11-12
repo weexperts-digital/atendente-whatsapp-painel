@@ -162,6 +162,13 @@
     tela.desconectar.hidden = e.status !== 'conectado';
     tela.modo.textContent = MODOS[e.modo] || '';
     tela.modo.hidden = !MODOS[e.modo];
+    if (tela.ouve) {
+      tela.ouve.textContent = e.ouve_audio
+        ? 'Áudios do WhatsApp: o assistente ouve, transcreve neste computador e responde por texto.'
+        : (e.tem_navegador === false
+          ? 'Áudios do WhatsApp: para o assistente ouvir, instale o Google Chrome ou o Microsoft Edge neste computador. Sem isso, ele pede para o cliente escrever.'
+          : 'Áudios do WhatsApp: a voz ainda está sendo preparada. Enquanto isso, o assistente pede para o cliente escrever.');
+    }
     pintarConexao(e.ia);
     const tema = temaDoPainel();
     for (const b of tela.temas) b.setAttribute('aria-pressed', b.dataset.tema === tema ? 'true' : 'false');
@@ -291,6 +298,7 @@
     const a = S.ajustes;
     tela.whats = typeof criarBlocoWhats === 'function' ? criarBlocoWhats() : null;
     tela.modo = h('p', { class: 'ajuda' });
+    tela.ouve = h('p', { class: 'ajuda' });
     tela.conexao = h('div', { class: 'cx-linha', role: 'status' });
     tela.notaModelo = h('p', { class: 'ajuda', hidden: true, text: 'O modelo do ChatGPT é escolhido em Trocar ou ver a conexão.' });
     tela.desconectar = h('div', { class: 'acoes' }, botao('Desconectar este aparelho', {
@@ -365,7 +373,8 @@
             tela.conexao,
             (tela.campoModelo = campoModelo),
             tela.notaModelo,
-            tela.modo),
+            tela.modo,
+            tela.ouve),
           bloco(icone('relogio'), 'Ritmo das respostas',
             'O assistente espera um pouco antes de responder, mostrando "digitando". Fica mais natural.',
             h('div', { class: 'aj-dupla' },

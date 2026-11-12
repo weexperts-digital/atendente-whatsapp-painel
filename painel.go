@@ -43,6 +43,7 @@ func (a *App) rotas() *http.ServeMux {
 	mux.HandleFunc("/api/visao", a.rotaVisao) // página Início (visao.go)
 	a.rotasDaFicha(mux)                       // ficha do contato (contatos.go)
 	a.rotasDeVoz(mux)                         // reconhecimento de voz local (voz.go)
+	ouvidoDoPainel.rotas(mux)                 // transcricao dos audios do WhatsApp (ouvido.go)
 
 	mux.HandleFunc("/api/sessao", a.rotaSessao)
 	mux.HandleFunc("/api/primeiro-acesso", a.rotaPrimeiroAcesso)
@@ -127,6 +128,7 @@ func (a *App) iniciarPainel() (int, error) {
 	}
 	a.mu.Lock()
 	a.porta = porta
+	ouvidoDoPainel.porta = porta
 	// Cada painel tem o seu cookie: uma copia de teste em outra porta nao derruba a sessao desta.
 	a.cookie = "atendente_" + strconv.Itoa(porta)
 	a.mu.Unlock()
@@ -152,6 +154,21 @@ const (
 	rotaDeArquivo = "/api/conhecimento/enviar"
 	rotaDeMidia   = "/api/enviar-arquivo"
 )
+
+// cabecalhosDoPainel poe em toda resposta os cabecalhos de seguranca do painel.
+func cabecalhosDoPainel(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	// 'wasm-unsafe-eval' e os workers são do reconhecimento de voz, que roda dentro da
+	// página (WebAssembly) com arquivos servidos por este programa. Nada vem de fora.
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	// Isolamento entre origens: deixa o reconhecimento de voz usar mais de um núcleo.
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+}
 
 // protegido barra pedidos que nao venham da propria pagina local.
 func (a *App) protegido(proximo http.Handler) http.Handler {
@@ -191,17 +208,7 @@ func (a *App) protegido(proximo http.Handler) http.Handler {
 				r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 			}
 		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		// 'wasm-unsafe-eval' e os workers são do reconhecimento de voz, que roda dentro da
-		// página (WebAssembly) com arquivos servidos por este programa. Nada vem de fora.
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-		// Isolamento entre origens: deixa o reconhecimento de voz usar mais de um núcleo.
-		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
-		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		cabecalhosDoPainel(w)
 		// Daqui para dentro, so quem esta logado e tem permissao para a rota.
 		r = a.conferirAcesso(w, r)
 		if r == nil {
@@ -449,6 +456,8 @@ func (a *App) rotaEstado(w http.ResponseWriter, r *http.Request) {
 		"erro_cerebro":  erroCerebro,
 		"aviso_cerebro": avisoDoCerebro(erroCerebro),
 		"ia":            ia,
+		"ouve_audio":    ouvidoDoPainel.disponivel(),
+		"tem_navegador": acharNavegador() != "",
 		"modelo":        modeloDe(a.cfg),
 		"agenda_ativa":  a.cfg.Agenda.Ativa,
 		"leads":         leads,

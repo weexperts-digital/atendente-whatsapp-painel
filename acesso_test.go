@@ -115,7 +115,9 @@ func TestNivelDaRota(t *testing.T) {
 		{"POST", "/api/lead/excluir", nivelAdmin},
 		{"GET", "/api/textos", nivelAdmin},
 		{"POST", "/api/conhecimento/enviar", nivelAdmin},
-		{"GET", "/voz/transformers-4.3.2.min.js", nivelLogado},
+		{"GET", "/voz/transformers-4.3.2.min.js", nivelLivre}, // o handler exige login ou a chave do ouvinte
+		{"GET", "/api/ouvido/proximo", nivelLivre},            // o handler exige a chave do ouvinte
+		{"POST", "/api/ouvido/resultado", nivelLivre},
 		{"GET", "/api/voz/estado", nivelLogado},
 		{"GET", "/api/contato", nivelLogado},
 		{"POST", "/api/contato/anotacoes", nivelLogado},

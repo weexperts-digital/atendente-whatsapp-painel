@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	versao = "2.6.0"
+	versao = "2.7.0"
 
 	statusQualificando = "qualificando"
 	statusQualificado  = "qualificado"

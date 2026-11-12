@@ -493,7 +493,7 @@ func (v *servicoDeVoz) rotaArquivo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Rota nova nasce fechada: a tela de entrada nao precisa da voz.
-	if usuarioDe(r) == nil {
+	if usuarioDe(r) == nil && !ouvidoDoPainel.autorizado(r) {
 		http.Error(w, "Entre no painel para continuar.", http.StatusUnauthorized)
 		return
 	}

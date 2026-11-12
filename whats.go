@@ -389,13 +389,27 @@ func (a *App) aoReceber(cli *whatsmeow.Client, evt *events.Message) {
 
 	if soMidia {
 		l.anexar(msg)
-		avisar := podeResponder && !l.AvisouMidia
+		// Audio: o atendente ouve (transcreve neste computador) e responde. O aviso de
+		// "so leio texto" fica para quando nao der para ouvir.
+		// Mensagem antiga (chegou atrasada) nao e ouvida nem respondida.
+		ouvir := msg.Tipo == "audio" && midia != nil && !antiga && ouvidoDoPainel.disponivel()
+		avisar := podeResponder && !l.AvisouMidia && !ouvir
 		if avisar {
 			l.AvisouMidia = true
 		}
 		a.salvarLeads()
 		a.mu.Unlock()
-		log.Printf("MENSAGEM: de %s (mídia sem texto, responder=%v)", fimDoNumero(tel), avisar)
+		log.Printf("MENSAGEM: de %s (mídia sem texto, responder=%v, ouvir=%v)", fimDoNumero(tel), podeResponder, ouvir)
+		if ouvir {
+			go func() {
+				a.baixarMidia(cli, id, info.ID, midia)
+				a.ouvirMensagem(cli, info, chat, id)
+			}()
+			if buscarFoto {
+				go a.atualizarFoto(cli, id)
+			}
+			return
+		}
 		depois()
 		if avisar {
 			go func() {
@@ -409,30 +423,8 @@ func (a *App) aoReceber(cli *whatsmeow.Client, evt *events.Message) {
 
 	iniciar, avisarLimite := false, false
 	if podeResponder {
-		c := a.contatoDe(id)
-		// Limite de mensagens processadas a cada 10 minutos por contato.
-		validas := c.janela[:0]
-		for _, t := range c.janela {
-			if agora.Sub(t) < janelaLimite {
-				validas = append(validas, t)
-			}
-		}
-		c.janela = validas
-		if len(c.janela) >= cfg.LimiteMsgs {
-			podeResponder = false
-			if !c.avisouLimite {
-				c.avisouLimite = true
-				avisarLimite = true
-			}
-		} else {
-			c.janela = append(c.janela, agora)
-			c.avisouLimite = false
-			msg.Pendente = true
-			if !c.trabalhando {
-				c.trabalhando = true
-				iniciar = true
-			}
-		}
+		podeResponder, iniciar, avisarLimite = a.entrarNaVez(id, cfg, agora)
+		msg.Pendente = podeResponder
 	}
 	l.anexar(msg)
 	a.salvarLeads()
@@ -447,6 +439,113 @@ func (a *App) aoReceber(cli *whatsmeow.Client, evt *events.Message) {
 	if podeResponder {
 		// So marca como lida quando o agente vai responder. Se esta pausado ou
 		// com a equipe, fica como nao lida para a pessoa ver no celular.
+		go a.marcarLida(cli, info)
+	}
+	if iniciar {
+		go a.trabalhar(id)
+	}
+}
+
+// entrarNaVez aplica o limite de mensagens por contato e diz se esta mensagem vai ser
+// respondida, se e preciso iniciar o trabalho de responder e se cabe o aviso de limite.
+// Chame com a.mu travado.
+func (a *App) entrarNaVez(id string, cfg Config, agora time.Time) (responder, iniciar, avisarLimite bool) {
+	c := a.contatoDe(id)
+	// Limite de mensagens processadas a cada 10 minutos por contato.
+	validas := c.janela[:0]
+	for _, t := range c.janela {
+		if agora.Sub(t) < janelaLimite {
+			validas = append(validas, t)
+		}
+	}
+	c.janela = validas
+	if len(c.janela) >= cfg.LimiteMsgs {
+		if !c.avisouLimite {
+			c.avisouLimite = true
+			avisarLimite = true
+		}
+		return false, false, avisarLimite
+	}
+	c.janela = append(c.janela, agora)
+	c.avisouLimite = false
+	if !c.trabalhando {
+		c.trabalhando = true
+		iniciar = true
+	}
+	return true, iniciar, false
+}
+
+// ouvirMensagem transcreve o audio que o cliente mandou (ja baixado) e trata o texto
+// como se a pessoa tivesse escrito: guarda na mensagem, para a equipe ler no painel, e
+// poe o assistente para responder. Se nao der para ouvir, vale o aviso de "so leio texto".
+func (a *App) ouvirMensagem(cli *whatsmeow.Client, info types.MessageInfo, chat types.JID, id string) {
+	achar := func(l *Lead) *Msg {
+		if l == nil {
+			return nil
+		}
+		for i := len(l.Historico) - 1; i >= 0; i-- {
+			if l.Historico[i].ID == string(info.ID) {
+				return &l.Historico[i]
+			}
+		}
+		return nil
+	}
+	a.mu.Lock()
+	arquivo := ""
+	if m := achar(a.leads[id]); m != nil {
+		arquivo = m.Midia
+	}
+	a.mu.Unlock()
+
+	texto, cortado, err := "", false, errSemOuvido
+	if arquivo != "" {
+		texto, cortado, err = a.ouvirArquivo(arquivo)
+	}
+	if err != nil {
+		log.Printf("OUVIDO: não transcrevi o áudio de %s: %v", fimDoNumero(id), err)
+	}
+
+	agora := time.Now()
+	a.mu.Lock()
+	l := a.leads[id]
+	if l == nil {
+		a.mu.Unlock()
+		return
+	}
+	cfg := a.cfg
+	podeResponder := cfg.Ligado && cfg.Salvo && !l.comHumano()
+	m := achar(l)
+	if err != nil || texto == "" || m == nil {
+		avisar := podeResponder && !l.AvisouMidia
+		if avisar {
+			l.AvisouMidia = true
+			a.salvarLeads()
+		}
+		a.mu.Unlock()
+		if avisar {
+			a.marcarLida(cli, info)
+			time.Sleep(time.Duration(1500+rand.Intn(1501)) * time.Millisecond)
+			a.enviarEAnotar(id, chat, msgSoTexto)
+		}
+		return
+	}
+	if cortado {
+		texto += " [áudio longo: ouvido só até os 5 minutos]"
+	}
+	m.Texto = texto
+	iniciar, avisarLimite := false, false
+	if podeResponder {
+		podeResponder, iniciar, avisarLimite = a.entrarNaVez(id, cfg, agora)
+		m.Pendente = podeResponder
+	}
+	a.salvarLeads()
+	a.mu.Unlock()
+
+	log.Printf("OUVIDO: áudio de %s transcrito (%d letras, responder=%v)", fimDoNumero(id), len([]rune(texto)), podeResponder)
+	if avisarLimite {
+		go a.enviarEAnotar(id, chat, msgUmaPorVez)
+	}
+	if podeResponder {
 		go a.marcarLida(cli, info)
 	}
 	if iniciar {
@@ -633,7 +732,7 @@ func (a *App) trabalhar(id string) {
 		var novas []string
 		for i := range l.Historico {
 			if l.Historico[i].Pendente {
-				novas = append(novas, l.Historico[i].Texto)
+				novas = append(novas, textoParaIA(l.Historico[i]))
 				l.Historico[i].Pendente = false
 			} else {
 				anteriores = append(anteriores, l.Historico[i])

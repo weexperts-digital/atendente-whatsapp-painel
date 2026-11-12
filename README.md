@@ -10,6 +10,7 @@ Esta é a versão com painel completo. A versão mais simples, usada na palestra
 
 - **Início**: a primeira tela do painel. Mostra se está tudo funcionando (atendente, WhatsApp, IA e agenda), os números de hoje e da semana, quem está esperando uma pessoa, os próximos horários e as últimas conversas.
 - **Conversas**: uma tela com cara de WhatsApp, com foto do contato, áudio, imagem, vídeo e PDF dentro da conversa. Quem foi transferido entra em uma fila; a pessoa da equipe clica em Iniciar atendimento, responde por texto, arquivo ou áudio, e depois devolve ao assistente. O cliente não vê quem está atendendo.
+- **Áudios**: quando o cliente manda um áudio, o assistente ouve, transcreve no seu próprio computador e responde por texto. A transcrição aparece na conversa, embaixo do áudio. Sem chave e sem enviar o áudio para fora.
 - **Contatos**: todo mundo que já escreveu para o negócio em uma tabela, com busca, filtros e planilha para baixar. Clicar em um contato abre a ficha dele: dados, o que a IA já entendeu, etiquetas, anotações da equipe, agendamentos e o histórico, para fazer o acompanhamento.
 - **Login e equipe**: o primeiro acesso cria a conta do super administrador. Ele cria as contas da equipe (administrador ou atendente) e vê o registro de quem entrou e do que cada pessoa fez.
 - **Banco de dados**: contatos, todas as mensagens, agenda e contas ficam em um banco SQLite dentro da pasta do programa, com uma cópia de segurança por dia. Não precisa instalar nem configurar nada.
@@ -27,6 +28,7 @@ Esta é a versão com painel completo. A versão mais simples, usada na palestra
 1. Um computador com Mac, Linux ou Windows.
 2. O [Claude Code](https://claude.com/claude-code) instalado. É ele que pensa as respostas, com a sua conta do Claude (plano pago). Você conecta a conta por um botão do painel, sem terminal. Se preferir, use o ChatGPT com uma chave da OpenAI.
 3. Um número de WhatsApp para o negócio. De preferência um número só para isso.
+4. Para o assistente ouvir áudios: o Google Chrome, o Microsoft Edge ou o Brave instalado. É quase certo que você já tem um deles. Sem isso tudo funciona, mas o assistente pede para o cliente escrever.
 
 ## Como ligar
 
@@ -84,7 +86,9 @@ Depois disso:
 | Ligar de novo depois de reiniciar o computador | `./ligar.sh` (ou peça ao Claude Code: ligue o atendente) |
 | Parar | `./parar.sh` |
 | Ver o que aconteceu | abra o arquivo `atendente.log` |
-| Atualizar depois de mudar o código | `./instalar.sh` |
+| Atualizar para a versão mais nova | `./atualizar.sh` (ou peça ao Claude Code: atualize o atendente). Seus dados e a conexão do WhatsApp continuam |
+| Montar de novo depois de mudar o código | `./instalar.sh` |
+| O assistente respondeu que só lê texto quando mandaram áudio | Veja em Ajustes, Cérebro, a linha Áudios do WhatsApp. Ela diz o que falta |
 | Aparece a faixa vermelha "A IA está desconectada" | Clique em Conectar a IA, entre na sua conta do Claude no navegador e autorize. A tela avisa quando terminar. Enquanto isso, as conversas novas vão para a fila da equipe. Plano B: `claude auth login` no terminal |
 | Esqueci a senha do super administrador | `./atendente -esqueci-senha` e recarregue a página (ou peça ao Claude Code: esqueci a senha do painel) |
 
@@ -111,7 +115,8 @@ A descrição das rotas do painel está em [docs/API.md](docs/API.md).
 
 - O assistente só responde conversas privadas, e só a quem escreveu primeiro. Ignora grupos, status e canais. As únicas mensagens que ele inicia são os avisos para o número que você cadastrou.
 - Nenhuma mensagem de WhatsApp consegue executar comandos no seu computador. O Claude é chamado sem nenhuma ferramenta (`--tools ""`), em uma pasta vazia, e só lê texto.
-- Fotos, áudios, vídeos e documentos que os clientes mandam são baixados somente dos servidores do WhatsApp e guardados em `dados/midia`, para a equipe ver no painel. O programa não abre nem executa esses arquivos, e a IA não os lê. As fotos de perfil vêm do mesmo lugar.
+- Fotos, áudios, vídeos e documentos que os clientes mandam são baixados somente dos servidores do WhatsApp e guardados em `dados/midia`, para a equipe ver no painel. O programa não executa esses arquivos nem os entrega a outros programas. As fotos de perfil vêm do mesmo lugar.
+- Os áudios dos clientes são transcritos no seu computador: o programa decodifica o som e o Whisper transforma em texto dentro de um navegador escondido, que o programa abre e fecha sozinho. Não há chave e o áudio não sai do computador. O texto transcrito é tratado como qualquer mensagem: um dado, nunca uma ordem.
 - O painel escuta só em `127.0.0.1`. Ninguém de fora do computador consegue abrir.
 - O painel pede login. As senhas ficam guardadas só como hash (Argon2id, com sal), nunca em texto. A sessão vai em um cookie que o JavaScript não lê e que não acompanha pedidos de outros sites. Cinco senhas erradas seguidas seguram o e-mail por 15 minutos.
 - Cada tipo de acesso alcança só as suas rotas, e isso é conferido no programa, não só na tela. Entradas, senhas erradas, atendimentos, ajustes e planilhas baixadas ficam no registro de acessos.
@@ -137,6 +142,7 @@ A descrição das rotas do painel está em [docs/API.md](docs/API.md).
 | `ANTHROPIC_API_KEY` | Se existir, vira reserva quando o `claude` falha duas vezes seguidas |
 | `ATENDENTE_WEB` | Pasta de onde servir a página, para mexer no visual sem compilar de novo |
 | `ATENDENTE_PORTA` | Primeira porta tentada pelo painel (padrão 8787), para rodar uma cópia de teste ao lado |
+| `ATENDENTE_NAVEGADOR` | Navegador da família do Chrome usado, escondido, para transcrever os áudios (o padrão é achar o Chrome, Edge, Brave ou Chromium instalado) |
 
 ```bash
 CGO_ENABLED=0 go build -o atendente .

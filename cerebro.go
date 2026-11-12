@@ -712,7 +712,7 @@ func montarEntrada(anteriores []Msg, novas []string, l *Lead, etiquetasEmUso []s
 		case "humano":
 			quem = "Equipe"
 		}
-		b.WriteString(quem + ": " + cortar(umaLinha(m.textoPlano()), maxLinhaIA) + "\n")
+		b.WriteString(quem + ": " + cortar(umaLinha(textoParaIA(m)), maxLinhaIA) + "\n")
 	}
 	limpas := make([]string, 0, len(novas))
 	for _, n := range novas {
