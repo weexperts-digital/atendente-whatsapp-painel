@@ -516,3 +516,32 @@ Na aba Contatos, clicar em uma linha abre `#contatos/<id>` (a ficha). A conversa
 - `GET /voz/...` (quem está logado): os arquivos da voz, baixados para `dados/voz/`. Só entrega o que está na lista fixa de `voz.go` e já teve o SHA-256 conferido.
 - Na página, `VOZ.botao({ aoTexto(texto, final), aoEstado(estado, info) })` devolve o botão do microfone. `texto` é sempre o texto inteiro da gravação até ali. `microfoneDe(area, obj, chave, aoTerminar)`, em `base.js`, liga esse botão a uma caixa de texto.
 
+## Versão 2.6: página Início
+
+`GET /api/visao` (quem está logado) entrega tudo o que a página Início mostra:
+
+```json
+{
+  "agora": "...", "no_ar_desde": "...", "negocio": "Clínica Exemplo",
+  "pecas": [ { "chave": "atendente | whatsapp | ia | agenda", "certo": true, "titulo": "Atendente ligado", "detalhe": "..." } ],
+  "hoje": { "novas": 0, "mensagens_clientes": 0, "respostas_assistente": 0, "respostas_equipe": 0, "transbordos": 0, "agendamentos": 0, "cancelamentos": 0, "conversas": 0 },
+  "semana": { "...": "os mesmos campos, nos últimos 7 dias" },
+  "situacao": { "total": 0, "com_assistente": 0, "aguardando": 0, "em_atendimento": 0, "quentes": 0, "mornos": 0, "frios": 0, "indefinidos": 0 },
+  "por_dia": [ { "data": "2026-11-12", "rotulo": "qui 12/11", "novas": 0, "mensagens": 0, "transbordos": 0, "agendamentos": 0 } ],
+  "fila": [ { "id": "", "exibir": "", "motivo": "", "desde": "...", "classificacao": "quente" } ],
+  "fila_total": 0,
+  "proximos": [ { "id": "", "nome": "", "servico": "", "inicio": "...", "origem": "assistente | painel" } ],
+  "proximos_total": 0, "marcados_hoje": 0,
+  "recentes": [ { "id": "", "exibir": "", "previa": "", "previa_de": "cliente | atendente | humano", "ultima_msg": "...", "classificacao": "", "situacao": "assistente | fila | atendimento" } ],
+  "ultima_mensagem": "...", "ultima_resposta": "...",
+  "materiais": 0, "etiquetas_em_uso": 0, "contatos_no_total": 0
+}
+```
+
+- `pecas` vem sempre com as quatro, nessa ordem. `certo` falso em `agenda` não é defeito (o negócio pode não usar hora marcada). A IA aparece como "Conferindo a IA" nos primeiros segundos depois de ligar.
+- `hoje` e `semana` são o `periodo` do relatório de 1 e de 7 dias. `por_dia` traz os 7 dias, do mais antigo para o mais novo, e `mensagens` soma clientes, assistente e equipe.
+- `fila` traz até 6 pessoas, quem espera há mais tempo primeiro. `proximos` traz até 5 horários marcados que ainda vão acontecer. `recentes` traz as 6 conversas mais novas.
+- Datas zeradas (`0001-01-01`) querem dizer que ainda não aconteceu.
+
+Na página, a aba é `#visao` e é a tela de chegada: endereço vazio ou desconhecido cai nela.
+

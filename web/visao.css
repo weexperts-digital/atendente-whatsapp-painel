@@ -1,0 +1,97 @@
+/* Página Início: a visão geral do painel. */
+
+.vs { display: flex; flex-direction: column; gap: 20px; }
+.vs-bloco { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.vs-cabeca { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
+.vs-cabeca h2 { display: flex; align-items: center; gap: 8px; font-size: 18px; letter-spacing: -.01em; }
+.vs-link { color: var(--roxo-texto); font-size: 13px; font-weight: 600; text-underline-offset: 3px; min-height: 32px; display: inline-flex; align-items: center; }
+.vs-link:hover { color: var(--texto); }
+.vs-nota { color: var(--suave); font-size: 13px; }
+.vs-conta {
+  min-width: 24px; padding: 1px 8px; border-radius: 999px; text-align: center;
+  background: var(--sup2); color: var(--texto); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.vs-conta-alerta { background: color-mix(in srgb, var(--morno) 18%, transparent); color: var(--morno); }
+
+/* ---------- Está funcionando? ---------- */
+.vs-veredito { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; }
+.vs-veredito.vs-ok { color: var(--ok); }
+.vs-veredito.vs-ruim { color: var(--perigo); }
+.vs-pecas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.vs-peca {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px;
+  background: var(--sup2); border-radius: var(--raio); border-left: 4px solid var(--verde);
+}
+.vs-peca-ruim { border-left-color: var(--perigo); background: color-mix(in srgb, var(--perigo) 8%, var(--sup)); }
+.vs-peca-neutro { border-left-color: var(--linha-forte); }
+.vs-peca-sinal { display: inline-flex; }
+.vs-peca-sinal .ic { width: 22px; height: 22px; color: var(--ok); }
+.vs-peca-ruim .vs-peca-sinal .ic { color: var(--perigo); }
+.vs-peca-neutro .vs-peca-sinal .ic { color: var(--suave); }
+.vs-peca-textos { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vs-peca-textos strong { line-height: 1.3; }
+.vs-peca-textos span { color: var(--suave); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.vs-atalho { align-self: flex-start; margin-top: auto; }
+.vs-provas { display: flex; flex-wrap: wrap; gap: 8px 32px; padding-top: 14px; border-top: 1px solid var(--linha); }
+.vs-provas > div { display: flex; flex-direction: column; gap: 1px; }
+.vs-provas dt { color: var(--suave); font-size: 12px; }
+.vs-provas dd { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---------- Números ---------- */
+.vs-numeros-area { display: flex; flex-direction: column; gap: 12px; }
+.vs-numeros { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.vs-numero {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 16px;
+  background: var(--sup); border: 1px solid var(--linha); border-radius: var(--raio);
+}
+.vs-numero-rotulo { min-height: 2.7em; color: var(--suave); font-size: 13px; font-weight: 600; line-height: 1.35; }
+.vs-numero-valor { font-size: 34px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.vs-numero-zero .vs-numero-valor { color: var(--suave); }
+.vs-numero-nota { color: var(--suave); font-size: 12px; line-height: 1.4; }
+
+/* ---------- Listas ---------- */
+.vs-colunas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.vs-lista { display: flex; flex-direction: column; margin: -4px 0; }
+.vs-lista > li + li { border-top: 1px solid var(--linha); }
+.vs-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 56px; padding: 10px 8px; margin: 0 -8px; border-radius: var(--raio-campo);
+  color: inherit; text-decoration: none;
+}
+a.vs-item:hover { background: var(--sup2); }
+.vs-item-textos { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.vs-item-textos strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-item-textos span { color: var(--suave); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-item-lado { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.vs-quando { color: var(--suave); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vs-quando-forte { color: var(--texto); font-size: 13px; font-weight: 600; }
+.vs-situacao { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--sup2); color: var(--suave); white-space: nowrap; }
+.vs-situacao-fila { background: color-mix(in srgb, var(--morno) 16%, transparent); color: var(--morno); }
+.vs-situacao-atendimento { background: color-mix(in srgb, var(--verde) 16%, transparent); color: var(--ok); }
+.vs-vazio { display: flex; align-items: center; gap: 8px; color: var(--suave); font-size: 14px; line-height: 1.5; }
+.vs-vazio .ic { color: var(--ok); flex: none; }
+
+/* ---------- Movimento da semana ---------- */
+.vs-barras { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: end; height: 190px; }
+.vs-barra-dia { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; min-width: 0; }
+.vs-barra-valor { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.vs-barra { width: 100%; max-width: 44px; min-height: 2px; border-radius: 6px 6px 2px 2px; background: var(--roxo); }
+.vs-barra-rotulo { color: var(--suave); font-size: 12px; }
+
+@media (max-width: 1100px) {
+  .vs-pecas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vs-numeros { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .vs-colunas { grid-template-columns: minmax(0, 1fr); }
+  .vs-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vs-numero-valor { font-size: 28px; }
+}
+@media (max-width: 480px) {
+  .vs-pecas { grid-template-columns: minmax(0, 1fr); }
+  .vs-item { align-items: flex-start; }
+}
+
+/* A marca do menu é o atalho para a Início. */
+.marca-link { color: inherit; text-decoration: none; border-radius: var(--raio-campo); }
+.marca-link:hover .marca-nome { color: var(--roxo-texto); }

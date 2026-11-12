@@ -1,7 +1,9 @@
 'use strict';
 // Casca do painel: rotas, barra de situação, busca periódica e a configuração inicial.
 
-const ABAS = ['conversas', 'contatos', 'agenda', 'relatorio', 'assistente', 'conhecimento', 'treinar', 'ajustes'];
+const ABAS = ['visao', 'conversas', 'contatos', 'agenda', 'relatorio', 'assistente', 'conhecimento', 'treinar', 'ajustes'];
+// A tela de chegada é a Início. Se ela não carregou, vale Conversas.
+const abaDeChegada = () => (TELAS.visao && typeof TELAS.visao.montar === 'function' ? 'visao' : 'conversas');
 const ARQUIVOS_TEXTO = ['personalidade', 'cerebro', 'regras', 'aprendizados'];
 // Abas que só administradores veem. O programa também barra as rotas delas.
 const ABAS_DE_ADMIN = ['assistente', 'conhecimento', 'treinar', 'ajustes'];
@@ -104,12 +106,12 @@ function telaExiste(aba) {
 }
 
 // lerRota entende "#agenda" e "#assistente/cerebro". Aba desconhecida, ou tela que
-// ainda não foi carregada, cai em Conversas.
+// ainda não foi carregada, cai na Início.
 function lerRota() {
   const partes = location.hash.replace(/^#\/?/, '').split('/');
-  let aba = ABAS.includes(partes[0]) ? partes[0] : 'conversas';
+  let aba = ABAS.includes(partes[0]) ? partes[0] : abaDeChegada();
   let sub = partes[1] || '';
-  if (!telaExiste(aba) || !abaPermitida(aba)) { aba = 'conversas'; sub = ''; }
+  if (!telaExiste(aba) || !abaPermitida(aba)) { aba = abaDeChegada(); sub = ''; }
   return { aba, sub };
 }
 

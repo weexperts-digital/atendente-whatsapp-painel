@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="/acesso.css">
 <link rel="stylesheet" href="/conexao.css">
 <link rel="stylesheet" href="/voz.css">
+<link rel="stylesheet" href="/visao.css">
 <script src="/vendor/motion.js" defer></script>
 <script src="/vendor/fullcalendar.js" defer></script>
 <script src="/vendor/fullcalendar-pt-br.js" defer></script>
@@ -30,6 +31,7 @@
 <script src="/treinar.js" defer></script>
 <script src="/ajustes.js" defer></script>
 <script src="/relatorio.js" defer></script>
+<script src="/visao.js" defer></script>
 <script src="/acesso.js" defer></script>
 <script src="/equipe.js" defer></script>
 <script src="/conexao.js" defer></script>
@@ -44,6 +46,7 @@
   <symbol id="i-conversas" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
   <symbol id="i-contatos" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
   <symbol id="i-agenda" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-casa" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M10 21v-6h4v6"/></symbol>
   <symbol id="i-relatorio" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17v-4M13 17V7M18 17v-7"/></symbol>
   <symbol id="i-assistente" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
   <symbol id="i-conhecimento" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></symbol>
@@ -88,11 +91,12 @@
 
 <div class="app" hidden>
   <aside class="lateral">
-    <div class="marca">
+    <a class="marca marca-link" href="#visao" aria-label="Atendente IA, ir para o Início">
       <span class="marca-sinal" aria-hidden="true"></span>
       <span class="marca-nome">Atendente IA</span>
-    </div>
+    </a>
     <nav class="nav" aria-label="Seções do painel">
+      <a href="#visao" data-aba="visao"><svg class="ic" aria-hidden="true"><use href="#i-casa"/></svg><span>Início</span></a>
       <a href="#conversas" data-aba="conversas"><svg class="ic" aria-hidden="true"><use href="#i-conversas"/></svg><span>Conversas</span><span class="selo" id="selo-aguardando" hidden></span></a>
       <a href="#contatos" data-aba="contatos"><svg class="ic" aria-hidden="true"><use href="#i-contatos"/></svg><span>Contatos</span></a>
       <a href="#agenda" data-aba="agenda"><svg class="ic" aria-hidden="true"><use href="#i-agenda"/></svg><span>Agenda</span></a>

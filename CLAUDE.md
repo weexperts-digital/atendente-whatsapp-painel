@@ -49,6 +49,11 @@ Nunca rode `./atendente` em primeiro plano. Para parar: `./parar.sh`.
 - Cópias de teste: ligue com `ATENDENTE_SEM_VOZ=1` para não baixar 267 MB em cada uma (o download só começa se alguém clicar no microfone).
 - Se a voz não ficar pronta: veja as linhas `VOZ:` em `atendente.log`. Apagar `dados/voz/` e religar baixa tudo de novo.
 
+## Início
+
+- A primeira tela do painel é a Início (`#visao`): diz se o atendimento está funcionando (atendente ligado, WhatsApp conectado, IA conectada, agenda ligada), quando foi a última mensagem de cliente e a última resposta do assistente, os números de hoje e dos últimos 7 dias, a fila de quem espera uma pessoa, os próximos horários e as últimas conversas. A marca "Atendente IA" no menu também leva para lá.
+- É por ela que a pessoa confere se está tudo certo. Se ela disser que "não está funcionando", peça para olhar o bloco "Está funcionando?": cada ponto com problema diz o que fazer.
+
 ## Contatos
 
 - Na aba Contatos, clicar em um contato abre a ficha dele (`#contatos/<id>`), não a conversa: dados, o que a IA já entendeu, etiquetas, anotações da equipe (`anotacoes`, só no painel), agendamentos e a linha do tempo (transferências, quem atendeu, horários marcados, remarcados e cancelados, mudanças de etiqueta). É a tela do acompanhamento. O botão Abrir conversa leva ao chat.
@@ -129,6 +134,7 @@ Olhe `atendente.log`. Cada mensagem tratada gera uma linha `MENSAGEM:` e cada re
 - `banco.go`: banco de dados (SQLite), gravação do que mudou e cópia diária.
 - `acesso.go`: contas, senhas, sessões, permissões por rota e registro de acessos.
 - `contatos.go`: lista de contatos, filtros, planilha e ficha do contato (dados, anotações e linha do tempo).
+- `visao.go`: página Início (se está funcionando, números do dia, fila, próximos horários). Na página: `visao.js`.
 - `conexao.go`: estado do login do Claude e o login iniciado pelo painel.
 - `openai.go`: ChatGPT pela chave da OpenAI (pedido sem ferramentas, modelos da conta, rotas da chave).
 - `cofre.go`: cofre de senhas do sistema, onde a chave da OpenAI fica guardada.

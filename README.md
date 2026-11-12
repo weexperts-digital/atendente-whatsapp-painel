@@ -8,6 +8,7 @@ Esta é a versão com painel completo. A versão mais simples, usada na palestra
 
 ## O que ele faz
 
+- **Início**: a primeira tela do painel. Mostra se está tudo funcionando (atendente, WhatsApp, IA e agenda), os números de hoje e da semana, quem está esperando uma pessoa, os próximos horários e as últimas conversas.
 - **Conversas**: uma tela com cara de WhatsApp, com foto do contato, áudio, imagem, vídeo e PDF dentro da conversa. Quem foi transferido entra em uma fila; a pessoa da equipe clica em Iniciar atendimento, responde por texto, arquivo ou áudio, e depois devolve ao assistente. O cliente não vê quem está atendendo.
 - **Contatos**: todo mundo que já escreveu para o negócio em uma tabela, com busca, filtros e planilha para baixar. Clicar em um contato abre a ficha dele: dados, o que a IA já entendeu, etiquetas, anotações da equipe, agendamentos e o histórico, para fazer o acompanhamento.
 - **Login e equipe**: o primeiro acesso cria a conta do super administrador. Ele cria as contas da equipe (administrador ou atendente) e vê o registro de quem entrou e do que cada pessoa fez.

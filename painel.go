@@ -40,8 +40,9 @@ func (a *App) rotas() *http.ServeMux {
 	mux.HandleFunc("/agenda.csv", a.rotaAgendaCSV)
 	mux.HandleFunc("/contatos.csv", a.rotaContatosCSV)
 	mux.HandleFunc("/api/contatos", a.rotaContatos)
-	a.rotasDaFicha(mux) // ficha do contato (contatos.go)
-	a.rotasDeVoz(mux)   // reconhecimento de voz local (voz.go)
+	mux.HandleFunc("/api/visao", a.rotaVisao) // página Início (visao.go)
+	a.rotasDaFicha(mux)                       // ficha do contato (contatos.go)
+	a.rotasDeVoz(mux)                         // reconhecimento de voz local (voz.go)
 
 	mux.HandleFunc("/api/sessao", a.rotaSessao)
 	mux.HandleFunc("/api/primeiro-acesso", a.rotaPrimeiroAcesso)
