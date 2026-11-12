@@ -20,8 +20,15 @@ if ($LASTEXITCODE -ne 0) {
 }
 $depois = (git rev-parse --short HEAD)
 
-if (($antes -eq $depois) -and (Test-Path ".\atendente.exe")) {
-    Write-Host "O atendente já está na versão mais nova."
+# Se nada mudou e o programa montado já é o do código desta pasta, não há o que fazer.
+# (Compara também a versão: o código pode ter sido baixado antes, sem montar o programa.)
+$noCodigo = ""
+$achado = Select-String -Path "estado.go" -Pattern '^\s*versao\s*=\s*"([^"]*)"' | Select-Object -First 1
+if ($achado) { $noCodigo = $achado.Matches[0].Groups[1].Value }
+$noPrograma = ""
+if (Test-Path ".\atendente.exe") { $noPrograma = (& ".\atendente.exe" -versao) }
+if (($antes -eq $depois) -and $noPrograma -and ($noCodigo -eq $noPrograma)) {
+    Write-Host "O atendente já está na versão mais nova ($noPrograma)."
     exit 0
 }
 
