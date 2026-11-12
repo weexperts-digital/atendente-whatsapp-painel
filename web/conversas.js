@@ -555,7 +555,13 @@
       trocar(caixa,
         grupo('situacao', 'Situação', SITUACOES),
         grupo('temp', 'Temperatura', TEMPERATURAS_FILTRO),
-        grupo('etiqueta', 'Etiquetas', [{ id: '', rotulo: 'Todas' }].concat(etiquetas.map((e) => ({ id: e, rotulo: e })))));
+        grupo('etiqueta', 'Etiquetas', [{ id: '', rotulo: 'Todas' }].concat(etiquetas.map((e) => ({ id: e, rotulo: e })))),
+        typeof ETIQUETAS !== 'undefined' && ACESSO.pode('admin')
+          ? h('button', {
+            type: 'button', class: 'btn btn-fantasma cv-gerenciar-etq', tabIndex: -1,
+            onclick: () => { fecharPainel(false); ETIQUETAS.abrir(); },
+          }, icone('lapis'), h('span', { text: 'Gerenciar etiquetas' }))
+          : null);
     }
 
     function pintar() {
@@ -1095,6 +1101,7 @@
     const usadas = new Map();
     let diaAnterior = '';
     for (const m of historico) {
+      if (m.evento === 'etiqueta') continue; // mudança de etiqueta: só no histórico interno
       const d = new Date(m.hora);
       const dia = isNaN(d) ? '' : d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
       if (dia && dia !== diaAnterior) {
@@ -1726,8 +1733,8 @@
     const atuais = (l.etiquetas || []).map(String);
     const daIA = (l.etiquetas_ia || []).map(String).filter((e) => atuais.includes(e));
     const texto = daIA.length
-      ? 'A IA criou durante o atendimento: ' + daIA.join(', ') + '. Se você tirar uma, ela não volta.'
-      : 'Use para separar os clientes. A IA também cria etiquetas sozinha durante o atendimento.';
+      ? 'Postas pela IA: ' + daIA.join(', ') + '. Se você tirar uma, ela não volta neste contato.'
+      : 'A IA põe e troca etiquetas sozinha durante o atendimento, usando as que já existem. Você também pode pôr as suas.';
     if (f.ajudaEtq.textContent !== texto) f.ajudaEtq.textContent = texto;
   }
 

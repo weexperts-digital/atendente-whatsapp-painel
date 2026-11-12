@@ -95,13 +95,16 @@
 
     // Preencher com IA
     const ia = { descricao: '' };
+    const areaIA = areaTexto(ia, 'descricao', {
+      rows: 4, placeholder: 'Ex.: Clínica de estética em Vitória. Limpeza de pele a R$ 120. Aberta de segunda a sexta, das 9h às 18h. Aceita Pix e cartão.',
+    });
     const caixaIA = h('details', { class: 'cartao' },
       h('summary', { class: 'resumo-linha' }, icone('ia'), h('span', { text: 'Preencher com a ajuda da IA' })),
       h('div', { class: 'pilha' },
-        campo('Conte sobre o seu negócio', areaTexto(ia, 'descricao', {
-          rows: 4, placeholder: 'Ex.: Barbearia em Vitória. Corte a R$ 40 e plano mensal de R$ 150. Aberta de segunda a sábado, das 9h às 19h. Aceita Pix e cartão.',
-        }), 'Escreva do seu jeito ou cole o texto do seu site ou Instagram. A IA distribui nos campos abaixo e você revisa.'),
+        campo('Conte sobre o seu negócio', areaIA,
+          'Escreva do seu jeito, fale no microfone ou cole o texto do seu site ou Instagram. A IA distribui nos campos abaixo e você revisa.'),
         h('div', { class: 'acoes' },
+          microfoneDe(areaIA, ia, 'descricao'),
           botao('Preencher com IA', {
             classe: 'btn-primario', icone: 'ia',
             aoClicar: async () => {
@@ -109,6 +112,7 @@
               const r = await api.post('/api/ia/negocio', { descricao: ia.descricao.trim() });
               let quantos = 0;
               for (const [k, v] of Object.entries(r.campos || {})) {
+                if (k === 'horario') continue; // os horários são os da Agenda
                 if (CAMPOS_NEGOCIO.includes(k) && typeof v === 'string' && v.trim()) { n[k] = v.trim(); quantos++; }
               }
               if (!quantos) throw new Error('A IA não encontrou dados para preencher. Tente escrever com mais detalhes.');
@@ -157,7 +161,8 @@
       aoClicar: async () => {
         if (!n.negocio.trim()) throw new Error('Escreva o nome do negócio.');
         const envio = {};
-        for (const c of CAMPOS_NEGOCIO) envio[c] = String(n[c] || '').trim();
+        // O horário não vai junto: ele é escrito pelo programa a partir das regras da Agenda.
+        for (const c of CAMPOS_NEGOCIO) if (c !== 'horario') envio[c] = String(n[c] || '').trim();
         envio.extras = n.extras.map((x) => ({ nome: nomeLimpo(x.nome), valor: String(x.valor || '').trim() })).filter((x) => x.nome);
         await salvarConfig(envio);
         S.negocio = novoNegocio();
@@ -174,11 +179,12 @@
           h('legend', { text: 'O básico' }),
           h('div', { class: 'grade-campos' },
             campo('Nome do negócio', txt('negocio', { required: true })),
-            campo('Segmento', txt('segmento', { placeholder: 'Ex.: Barbearia' })),
+            campo('Segmento', txt('segmento', { placeholder: 'Ex.: Clínica de estética' })),
             campo('Cidade', txt('cidade', { placeholder: 'Ex.: São Mateus, ES' })),
             campo('Endereço', txt('endereco')),
             campo('Telefone para contato', txt('telefone', { type: 'tel', inputMode: 'tel' })),
-            campo('Horário de atendimento', txt('horario', { placeholder: 'Ex.: segunda a sábado, das 9h às 19h' })),
+            campo('Horário de atendimento', h('input', { type: 'text', value: n.horario || '', readOnly: true, placeholder: 'Ainda não informado' }),
+              'Vem dos dias e horários da Agenda. Para mudar, abra a aba Agenda e clique em Regras da agenda.'),
             campo('Site', txt('site', { inputMode: 'url' })),
             campo('Instagram', txt('instagram', { placeholder: 'Ex.: @seunegocio' })))),
         h('fieldset', { class: 'grupo' },

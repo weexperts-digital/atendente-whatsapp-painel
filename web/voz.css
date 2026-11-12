@@ -1,0 +1,52 @@
+/* Botão de narrar por voz (voz.js). Usa os tokens do painel: acompanha o tema claro e o escuro. */
+
+.voz {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  min-width: 0; max-width: 100%;
+}
+
+.voz-botao { flex: none; }
+.voz-figura { display: inline-flex; }
+
+/* Gravando: o botão vira "Parar", em vermelho, com o mesmo par de cores do botão de perigo. */
+.voz-botao.voz-gravando { background: var(--perigo-fundo); color: #FFFFFF; border-color: transparent; }
+.voz-botao.voz-gravando:hover:not(:disabled) { border-color: transparent; filter: brightness(1.1); }
+.voz-botao.voz-gravando .ic { fill: currentColor; }
+
+/* Cada estado mostra só o que é dele. */
+.voz-onda, .voz-tempo, .voz-barra, .voz-porcento { display: none; }
+.voz[data-estado="gravando"] .voz-onda { display: inline-flex; }
+.voz[data-estado="gravando"] .voz-tempo { display: inline-block; }
+.voz[data-estado="preparando"] .voz-barra { display: inline-block; }
+.voz[data-estado="preparando"] .voz-porcento { display: inline-block; }
+
+/* Sinal de que o microfone está ouvindo: as barras sobem com o volume da voz. */
+.voz-onda { align-items: center; gap: 3px; height: 26px; }
+.voz-onda i {
+  display: block; width: 4px; border-radius: 2px;
+  background: var(--perigo);
+  height: calc(4px + var(--voz-nivel, 0) * var(--voz-alcance, 20px));
+  transition: height .08s linear;
+}
+.voz-onda i:nth-child(1), .voz-onda i:nth-child(5) { --voz-alcance: 9px; }
+.voz-onda i:nth-child(2), .voz-onda i:nth-child(4) { --voz-alcance: 16px; }
+.voz-onda i:nth-child(3) { --voz-alcance: 22px; }
+
+.voz-tempo { min-width: 4ch; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Preparo (download da primeira vez). */
+.voz-barra {
+  width: 96px; height: 6px; border-radius: 3px; overflow: hidden;
+  background: var(--linha);
+}
+.voz-barra i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--roxo-fundo); transition: width .4s ease; }
+.voz-porcento { min-width: 4ch; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* O aviso fica ao lado do botão. Se a linha ficar estreita demais, desce para baixo dele. */
+.voz-aviso { flex: 1 1 auto; min-width: min(180px, 100%); color: var(--suave); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.voz-aviso:empty { display: none; }
+.voz-aviso.voz-erro { color: var(--perigo); }
+
+@media (prefers-reduced-motion: reduce) {
+  .voz-onda i, .voz-barra i { transition: none; }
+}

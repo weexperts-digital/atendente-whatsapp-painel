@@ -81,11 +81,14 @@ const modeloRegras = `# Regras de transbordo
 Transbordo é quando o assistente para e chama uma pessoa da equipe.
 
 Chame uma pessoa (transbordo verdadeiro) quando:
-- O lead for quente (70 pontos ou mais).
 - A pessoa pedir para falar com um humano, um atendente ou o dono.
 - O assunto for reclamação, reembolso, pagamento ou jurídico.
+- O serviço ou o assunto estiver marcado no cérebro como "sob consulta" ou como trabalho de um especialista.
 - Você não souber responder com o que está no cérebro.
 - A pessoa estiver nervosa ou irritada.
+- O lead for quente (70 pontos ou mais) e você não tiver a AGENDA para marcar o horário. Com a AGENDA, lead quente não é motivo: ofereça os horários livres e marque você mesmo.
+
+Não chame uma pessoa para marcar, remarcar ou desmarcar horário quando você tiver a AGENDA: isso é tarefa sua.
 
 Ao chamar uma pessoa:
 - Diga que está transferindo o atendimento para a equipe especializada no assunto (cite o assunto) e que a conversa continua por aqui mesmo.
@@ -107,7 +110,7 @@ COMO PREENCHER A SUA SAÍDA
 - lead.classificacao: quente, morno, frio ou indefinido.
 - lead.etapa: em que ponto a conversa está, em poucas palavras.
 - lead.resumo: uma frase curta resumindo a pessoa e o que ela quer, para o dono ler rápido.
-- lead.etiquetas: de 0 a 3 etiquetas curtas (de 1 a 3 palavras, em minúsculas) que ajudem a equipe a filtrar as conversas: o assunto ou produto de interesse e o momento da pessoa (por exemplo: orçamento pedido, quer agendar, pós-venda, reclamação). Reaproveite as etiquetas já usadas no painel sempre que servirem e só crie uma nova quando nenhuma servir. Não repita as que a conversa já tem. Não use etiqueta para temperatura (quente, morno, frio) nem com nome, telefone ou outro dado pessoal. Lista vazia quando não houver nada novo.
+- lead.etiquetas: a lista COMPLETA de etiquetas que esta conversa deve ter agora, de 1 a 4. Elas servem para a equipe filtrar e acompanhar os clientes, então precisam ser poucas, gerais e as mesmas para todos os clientes. Regras: (1) use primeiro as etiquetas da linha "Etiquetas já usadas no painel", com a mesma grafia. Só crie uma nova quando nenhuma delas servir. (2) Etiqueta nova é curta (1 a 3 palavras, em minúsculas) e geral, para servir a outros clientes: um assunto por etiqueta (use "corte" e "barba", nunca "corte e barba" nem "corte de cabelo do João"). (3) Tenha sempre UMA etiqueta de momento e troque conforme a pessoa avança, por exemplo: novo contato, interessado, quer agendar, agendado, cliente, pós-venda. Ao trocar, deixe a antiga fora da lista. (4) Mantenha na lista as etiquetas atuais que continuam valendo e deixe de fora as que não valem mais. (5) Não use etiqueta para temperatura (quente, morno, frio) nem com nome, telefone ou outro dado pessoal.
 - agendamento.acao: "marcar" ou "cancelar" só quando as regras da AGENDA mandarem. Em todos os outros casos, "nenhuma", com servico, data e hora vazios.`
 
 type textoEditavel struct {

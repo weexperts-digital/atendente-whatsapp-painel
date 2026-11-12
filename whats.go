@@ -697,6 +697,9 @@ func (a *App) trabalhar(id string) {
 		if agenda.Cancelado != nil {
 			l.evento("cancelou", "Horário cancelado pelo assistente: "+agenda.Cancelado.Servico+", "+dataPorExtenso(agenda.Cancelado.Inicio))
 		}
+		if agenda.Remarcado != nil {
+			l.evento("remarcou", "Horário remarcado pelo assistente: "+agenda.Remarcado.Servico+", de "+dataPorExtenso(agenda.Antes)+" para "+dataPorExtenso(agenda.Remarcado.Inicio))
+		}
 		a.mu.Unlock()
 		if agenda.Resposta != "" {
 			saida.Resposta = agenda.Resposta
@@ -723,7 +726,9 @@ func (a *App) trabalhar(id string) {
 			return
 		}
 		aplicarSaida(l, saida)
-		l.etiquetasDaIA(saida.Lead.Etiquetas, a.etiquetasEmUso())
+		if postas, tiradas := l.etiquetasDaIA(saida.Lead.Etiquetas, a.etiquetasEmUso()); len(postas)+len(tiradas) > 0 {
+			l.evento("etiqueta", fraseDeEtiquetas("a IA", postas, tiradas))
+		}
 		quente := l.Classificacao == "quente"
 		transbordo := saida.Transbordo
 		// Lead quente sempre chama uma pessoa. Com a agenda ligada, quem decide e o
@@ -780,6 +785,12 @@ func (a *App) trabalhar(id string) {
 			log.Printf("AGENDA: horário cancelado pelo assistente")
 			if avisarAgenda {
 				go a.avisarHumanos(numeros, avisoAgendamento(agenda.Cancelado, true), "cancelamento")
+			}
+		}
+		if agenda.Remarcado != nil {
+			log.Printf("AGENDA: horário remarcado pelo assistente para %s", dataBR(agenda.Remarcado.Inicio))
+			if avisarAgenda {
+				go a.avisarHumanos(numeros, avisoRemarcacao(agenda.Remarcado, agenda.Antes), "remarcação")
 			}
 		}
 		if transbordo {

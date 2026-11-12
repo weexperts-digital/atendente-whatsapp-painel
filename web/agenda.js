@@ -657,7 +657,7 @@
         valor: s.nome,
         texto: s.nome + (s.duracao_min ? ' (' + s.duracao_min + ' min' + (s.preco ? ', ' + s.preco : '') + ')' : ''),
       })))
-      : entrada(m, 'servico', { placeholder: 'Ex.: Corte', autocomplete: 'off', maxLength: 120 });
+      : entrada(m, 'servico', { placeholder: 'Ex.: Consulta', autocomplete: 'off', maxLength: 120 });
 
     // Atalho: os horários livres do dia escolhido, pelas regras da agenda.
     const livresEl = h('div', { class: 'livres' });
@@ -797,9 +797,9 @@
     const pintarServicos = () => {
       trocar(servicos,
         r.servicos.map((s, i) => h('div', { class: 'linha-servico' },
-          campo('Serviço', entrada(s, 'nome', { placeholder: 'Ex.: Corte', autocomplete: 'off' }, sujar)),
+          campo('Serviço', entrada(s, 'nome', { placeholder: 'Ex.: Consulta', autocomplete: 'off' }, sujar)),
           campo('Duração (min)', entrada(s, 'duracao_min', { type: 'number', min: 5, max: 600, step: 5, inputMode: 'numeric' }, sujar)),
-          h('div', { class: 'campo-preco' }, campo('Preço', entrada(s, 'preco', { placeholder: 'Ex.: R$ 40', autocomplete: 'off' }, sujar))),
+          h('div', { class: 'campo-preco' }, campo('Preço', entrada(s, 'preco', { placeholder: 'Ex.: R$ 80', autocomplete: 'off' }, sujar))),
           botao('', {
             icone: 'lixo', classe: 'btn-icone', rotulo: 'Remover o serviço ' + (s.nome || (i + 1)),
             aoClicar: () => { r.servicos.splice(i, 1); sujar(); pintarServicos(); },

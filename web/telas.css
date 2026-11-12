@@ -514,3 +514,31 @@
 @media (prefers-reduced-motion: reduce) {
   .tl-entrando, .tr-novo, .aj-salvar[data-sujo="sim"] { animation: none; }
 }
+
+/* ---------- Gerenciar etiquetas ---------- */
+.etq-janela { width: min(560px, calc(100vw - 32px)); }
+.etq { display: flex; flex-direction: column; gap: 14px; }
+.etq-lista { display: flex; flex-direction: column; }
+.etq-linha {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 14px;
+  min-height: 52px; padding: 4px 0; border-top: 1px solid var(--linha);
+}
+.etq-linha:first-child { border-top: 0; }
+.etq-nome { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.etq-nome .cv-tag { overflow-wrap: anywhere; }
+.etq-ia { display: inline-flex; align-items: center; gap: 4px; color: var(--roxo-texto); font-size: 12px; font-weight: 600; }
+.etq-ia .ic { width: 13px; height: 13px; }
+.etq-conta { color: var(--suave); font-size: 13px; white-space: nowrap; }
+.etq-acoes { display: flex; gap: 2px; }
+.etq-apagar:hover:not(:disabled) { color: var(--perigo); }
+.etq-editar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.etq-editar input { flex: 1 1 180px; min-height: 44px; }
+.cv-gerenciar-etq { width: 100%; justify-content: flex-start; margin-top: 4px; border-top: 1px solid var(--linha); border-radius: 0; }
+
+/* ---------- Configuração inicial: horários e agenda ---------- */
+.inicio-escolha { align-self: flex-start; flex-wrap: wrap; }
+.inicio-corpo .dias { max-width: 100%; }
+.inicio-corpo fieldset.grupo { display: flex; flex-direction: column; gap: 12px; }
+
+/* Atalho de etiquetas na aba Contatos: um botão com cara de link. */
+button.link-baixar { background: none; border: 0; cursor: pointer; font: inherit; min-height: 44px; }

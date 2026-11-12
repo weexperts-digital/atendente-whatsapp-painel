@@ -386,14 +386,13 @@ func limparEtiquetas(lista []string) []string {
 }
 
 const (
-	maxEtiquetasIA     = 6  // quantas etiquetas criadas pela IA uma conversa guarda
-	maxEtiquetasPorVez = 3  // quantas a IA pode sugerir em cada resposta
-	maxEtiquetasFora   = 40 // quantas etiquetas tiradas por uma pessoa a conversa lembra
+	maxEtiquetasIA   = 5  // quantas etiquetas da IA uma conversa tem ao mesmo tempo
+	maxEtiquetasFora = 40 // quantas etiquetas tiradas por uma pessoa a conversa lembra
 )
 
 // etiquetasProibidas nao viram etiqueta da IA: a temperatura e a situacao ja tem lugar proprio.
 var etiquetasProibidas = map[string]bool{
-	"quente": true, "morno": true, "frio": true, "indefinido": true, "lead": true, "cliente": true,
+	"quente": true, "morno": true, "frio": true, "indefinido": true,
 	"lead quente": true, "lead morno": true, "lead frio": true, "na fila": true, "em atendimento": true,
 	"qualificado": true, "qualificando": true, "aguardando humano": true, "whatsapp": true,
 }
@@ -432,36 +431,193 @@ func semEtiqueta(lista []string, e string) []string {
 	return saida
 }
 
-// etiquetasDaIA junta a conversa as etiquetas que a IA sugeriu. A IA so acrescenta:
-// nunca tira etiqueta posta por uma pessoa e nao repoe a que uma pessoa tirou. Se ja
-// existe uma etiqueta igual em outra conversa, usa a mesma grafia. Quando passa do
-// limite, sai a etiqueta mais antiga criada pela propria IA.
-func (l *Lead) etiquetasDaIA(sugeridas, emUso []string) {
-	if len(sugeridas) > maxEtiquetasPorVez {
-		sugeridas = sugeridas[:maxEtiquetasPorVez]
-	}
-	for _, s := range sugeridas {
+// etiquetasDaIA recebe a lista de etiquetas que a IA acha que a conversa deve ter agora
+// e acerta as etiquetas DELA: poe as que faltam e tira as que ela mesma criou e que
+// sairam da lista (por exemplo, troca "quer agendar" por "agendado"). Regras:
+//   - etiqueta posta por uma pessoa nunca sai por conta da IA;
+//   - etiqueta que uma pessoa tirou a IA nao repoe;
+//   - se ja existe uma igual no painel (sem contar maiusculas e acentos), usa a mesma grafia;
+//   - lista vazia quer dizer "sem mudanca", para uma resposta distraida nao apagar tudo.
+//
+// Devolve o que foi posto e o que foi tirado, para o historico do contato.
+func (l *Lead) etiquetasDaIA(desejadas, emUso []string) (postas, tiradas []string) {
+	var lista []string
+	for _, s := range desejadas {
 		e := etiquetaDaIALimpa(s)
-		if e == "" || temEtiqueta(l.Etiquetas, e) || temEtiqueta(l.EtiquetasFora, e) {
+		if e == "" || temEtiqueta(lista, e) || temEtiqueta(l.EtiquetasFora, e) {
 			continue
 		}
-		for _, existente := range emUso {
+		for _, existente := range append(append([]string{}, l.Etiquetas...), emUso...) {
 			if chaveTexto(existente) == chaveTexto(e) {
 				e = existente
 				break
 			}
 		}
-		for len(l.EtiquetasIA) >= maxEtiquetasIA || len(l.Etiquetas) >= 12 {
-			if len(l.EtiquetasIA) == 0 {
-				return // a conversa esta cheia de etiquetas postas por pessoas
-			}
-			velha := l.EtiquetasIA[0]
-			l.EtiquetasIA = l.EtiquetasIA[1:]
-			l.Etiquetas = semEtiqueta(l.Etiquetas, velha)
+		lista = append(lista, e)
+		if len(lista) >= maxEtiquetasIA {
+			break
+		}
+	}
+	if len(lista) == 0 {
+		return nil, nil
+	}
+	// Tira as que eram da IA e sairam da lista.
+	ficam := l.EtiquetasIA[:0:0]
+	for _, e := range l.EtiquetasIA {
+		if temEtiqueta(lista, e) {
+			ficam = append(ficam, e)
+			continue
+		}
+		l.Etiquetas = semEtiqueta(l.Etiquetas, e)
+		tiradas = append(tiradas, e)
+	}
+	l.EtiquetasIA = ficam
+	// Poe as novas. As que uma pessoa ja tinha posto continuam sendo da pessoa.
+	for _, e := range lista {
+		if temEtiqueta(l.Etiquetas, e) || len(l.Etiquetas) >= 12 {
+			continue
 		}
 		l.Etiquetas = append(l.Etiquetas, e)
 		l.EtiquetasIA = append(l.EtiquetasIA, e)
+		postas = append(postas, e)
 	}
+	return postas, tiradas
+}
+
+// fraseDeEtiquetas descreve uma mudanca de etiquetas para o historico do contato.
+func fraseDeEtiquetas(quem string, postas, tiradas []string) string {
+	var partes []string
+	if len(postas) > 0 {
+		partes = append(partes, "pôs "+strings.Join(postas, ", "))
+	}
+	if len(tiradas) > 0 {
+		partes = append(partes, "tirou "+strings.Join(tiradas, ", "))
+	}
+	if len(partes) == 0 {
+		return ""
+	}
+	return "Etiquetas: " + quem + " " + strings.Join(partes, " e ")
+}
+
+// diferencaDeEtiquetas compara duas listas, sem contar maiusculas e acentos.
+func diferencaDeEtiquetas(antes, depois []string) (postas, tiradas []string) {
+	for _, e := range depois {
+		if !temEtiqueta(antes, e) {
+			postas = append(postas, e)
+		}
+	}
+	for _, e := range antes {
+		if !temEtiqueta(depois, e) {
+			tiradas = append(tiradas, e)
+		}
+	}
+	return postas, tiradas
+}
+
+// unificarEtiquetas deixa cada etiqueta com uma grafia so em todos os contatos: vale a
+// grafia mais usada (no empate, a que vem primeiro em ordem alfabetica). Roda ao ligar,
+// para acertar dados de versoes antigas. Devolve quantos contatos mudaram.
+// Chame com a.mu travado.
+func (a *App) unificarEtiquetas() int {
+	oficial := a.grafiasOficiais()
+	acertar := func(lista []string) ([]string, bool) {
+		mudou := false
+		saida := lista[:0:0]
+		for _, e := range lista {
+			if certo, tem := oficial[chaveTexto(e)]; tem && certo != e {
+				e = certo
+				mudou = true
+			}
+			if temEtiqueta(saida, e) {
+				mudou = true
+				continue
+			}
+			saida = append(saida, e)
+		}
+		return saida, mudou
+	}
+	mudaram := 0
+	for _, l := range a.leads {
+		novas, m1 := acertar(l.Etiquetas)
+		daIA, m2 := acertar(l.EtiquetasIA)
+		if m1 || m2 {
+			l.Etiquetas, l.EtiquetasIA = novas, daIA
+			mudaram++
+		}
+	}
+	return mudaram
+}
+
+// etiquetaDoPainel conta em quantos contatos uma etiqueta esta.
+type etiquetaDoPainel struct {
+	Nome     string `json:"nome"`
+	Contatos int    `json:"contatos"`
+	DaIA     int    `json:"da_ia"` // em quantos deles foi a IA que pos
+}
+
+// catalogoDeEtiquetas lista as etiquetas do painel, sem repetir (maiusculas e acentos
+// nao contam), da mais usada para a menos usada. Chame com a.mu travado.
+func (a *App) catalogoDeEtiquetas() []etiquetaDoPainel {
+	indice := map[string]int{}
+	lista := []etiquetaDoPainel{}
+	for _, l := range a.leads {
+		for _, e := range l.Etiquetas {
+			chave := chaveTexto(e)
+			i, tem := indice[chave]
+			if !tem {
+				i = len(lista)
+				indice[chave] = i
+				lista = append(lista, etiquetaDoPainel{Nome: e})
+			}
+			lista[i].Contatos++
+			if temEtiqueta(l.EtiquetasIA, e) {
+				lista[i].DaIA++
+			}
+		}
+	}
+	sort.SliceStable(lista, func(i, j int) bool {
+		if lista[i].Contatos != lista[j].Contatos {
+			return lista[i].Contatos > lista[j].Contatos
+		}
+		return chaveTexto(lista[i].Nome) < chaveTexto(lista[j].Nome)
+	})
+	return lista
+}
+
+// renomearEtiqueta troca o nome de uma etiqueta em todos os contatos. Se o nome novo ja
+// existir no contato, as duas viram uma so. Nome novo vazio apaga a etiqueta.
+// Devolve quantos contatos mudaram. Chame com a.mu travado.
+func (a *App) renomearEtiqueta(de, para string) int {
+	mudaram := 0
+	trocarEm := func(lista []string) []string {
+		saida := lista[:0:0]
+		for _, e := range lista {
+			if chaveTexto(e) == chaveTexto(de) {
+				e = para
+			}
+			if e != "" && !temEtiqueta(saida, e) {
+				saida = append(saida, e)
+			}
+		}
+		return saida
+	}
+	for _, l := range a.leads {
+		if !temEtiqueta(l.Etiquetas, de) {
+			continue
+		}
+		l.Etiquetas = trocarEm(l.Etiquetas)
+		l.EtiquetasIA = trocarEm(l.EtiquetasIA)
+		if para == "" {
+			// Apagada por uma pessoa: a IA nao repoe neste contato.
+			if !temEtiqueta(l.EtiquetasFora, de) {
+				l.EtiquetasFora = append(l.EtiquetasFora, de)
+			}
+		} else {
+			l.EtiquetasFora = semEtiqueta(l.EtiquetasFora, para)
+		}
+		mudaram++
+	}
+	return mudaram
 }
 
 // etiquetasEditadas roda quando uma pessoa muda as etiquetas pelo painel: o que ela
@@ -489,18 +645,40 @@ func (l *Lead) etiquetasEditadas(antes []string) {
 
 // etiquetasEmUso lista todas as etiquetas das conversas. Chame com a.mu travado.
 func (a *App) etiquetasEmUso() []string {
-	vistas := map[string]bool{}
-	lista := []string{}
-	for _, l := range a.leads {
-		for _, e := range l.Etiquetas {
-			if !vistas[e] {
-				vistas[e] = true
-				lista = append(lista, e)
-			}
-		}
+	oficial := a.grafiasOficiais()
+	lista := make([]string, 0, len(oficial))
+	for _, e := range oficial {
+		lista = append(lista, e)
 	}
 	sort.Slice(lista, func(i, j int) bool { return chaveTexto(lista[i]) < chaveTexto(lista[j]) })
 	return lista
+}
+
+// grafiasOficiais diz, para cada etiqueta (sem contar maiusculas e acentos), qual e a
+// grafia que vale: a mais usada e, no empate, a que vem primeiro em ordem alfabetica.
+// Chame com a.mu travado.
+func (a *App) grafiasOficiais() map[string]string {
+	uso := map[string]map[string]int{}
+	for _, l := range a.leads {
+		for _, e := range l.Etiquetas {
+			chave := chaveTexto(e)
+			if uso[chave] == nil {
+				uso[chave] = map[string]int{}
+			}
+			uso[chave][e]++
+		}
+	}
+	oficial := map[string]string{}
+	for chave, grafias := range uso {
+		melhor := ""
+		for g, n := range grafias {
+			if melhor == "" || n > grafias[melhor] || (n == grafias[melhor] && g < melhor) {
+				melhor = g
+			}
+		}
+		oficial[chave] = melhor
+	}
+	return oficial
 }
 
 // ---------- relatorio ----------

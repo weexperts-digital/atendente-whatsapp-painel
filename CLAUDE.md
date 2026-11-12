@@ -9,7 +9,7 @@ Quem usa costuma ser leigo. Fale em português simples, frases curtas, sem trave
 1. Se não existir o arquivo `atendente` nesta pasta, rode `./instalar.sh` (Windows: `powershell -ExecutionPolicy Bypass -File .\instalar.ps1`). Ele baixa o Go para `.go-sdk` se faltar, compila e liga.
 2. Se já existir, rode `./ligar.sh` (Windows: `ligar.ps1`). Ele para o processo antigo e inicia de novo em segundo plano.
 3. Abra o endereço no navegador: `open http://localhost:PORTA` (a porta fica em `porta.txt`).
-4. Diga à pessoa para criar a conta do super administrador na tela que abre (nome, e-mail e senha duas vezes), seguir a configuração inicial (o primeiro passo é clicar em Conectar o Claude e autorizar no navegador) e ler o QR com o WhatsApp do negócio.
+4. Diga à pessoa para criar a conta do super administrador na tela que abre (nome, e-mail e senha duas vezes), seguir a configuração inicial (conectar a IA, contar sobre o negócio digitando ou falando no microfone, conferir os horários e a agenda) e ler o QR com o WhatsApp do negócio.
 
 A senha é da pessoa. Nunca escolha, digite nem peça a senha dela: quem cria a conta e entra é sempre ela, no navegador.
 
@@ -35,9 +35,31 @@ Nunca rode `./atendente` em primeiro plano. Para parar: `./parar.sh`.
 
 ## Atendimento: etiquetas e contexto
 
-- A IA cria etiquetas sozinha durante o atendimento (campo `lead.etiquetas` da saída, até 3 por resposta). Ela só acrescenta: não tira etiqueta posta por uma pessoa e não repõe a que uma pessoa tirou (`etiquetas_fora`). As que ela criou ficam em `etiquetas_ia`. Regras em `midia.go` (`etiquetasDaIA`).
+- Etiquetas são únicas no painel: cada uma existe uma vez só, sem contar maiúsculas e acentos, e vale para todos os contatos. A lista fica em Conversas, filtro, Gerenciar etiquetas (renomear, juntar duas em uma e apagar).
+- A IA cuida das etiquetas dela durante o atendimento. A cada resposta ela devolve em `lead.etiquetas` a lista completa que a conversa deve ter (até 5), usando primeiro as que já existem. O programa põe as que faltam e tira as que a própria IA tinha posto e saíram da lista (por exemplo, troca "quer agendar" por "agendado"). Ela nunca tira etiqueta posta por uma pessoa e não repõe a que uma pessoa tirou (`etiquetas_fora`). As dela ficam em `etiquetas_ia`. Lista vazia quer dizer "sem mudança". Regras em `midia.go` (`etiquetasDaIA`).
+- Cada mudança de etiqueta, da IA ou de uma pessoa, vira um registro interno (`evento` igual a `etiqueta`) no histórico do contato. Não aparece no meio das mensagens e não vai para a IA.
 - Toda mensagem fica guardada no banco, de qualquer lado: cliente, assistente e equipe (pelo painel ou pelo celular).
 - Quando a equipe atende e devolve a conversa, a IA recebe o atendimento humano inteiro (até 60 mensagens, contra 30 em conversa normal), com as linhas "Equipe:" e as marcas de quando a conversa trocou de mãos. O nome de quem atendeu não vai para a IA. Regras em `montarEntrada`, em `cerebro.go`.
+
+## Voz (narrar o negócio no microfone)
+
+- Na configuração inicial e em Assistente, Negócio, a pessoa pode clicar no microfone e contar como é o negócio. O texto aparece na caixa enquanto ela fala e, quando ela para, a IA preenche os campos e os horários.
+- O áudio é entendido dentro do próprio navegador, com o Whisper (modelo small), sem chave e sem enviar o áudio para lugar nenhum. O texto transcrito segue o mesmo caminho do texto digitado.
+- Na primeira vez que liga, o programa baixa em segundo plano o que a voz precisa (267 MB: transformers.js, ONNX Runtime e o modelo) para `dados/voz/`, de endereços fixos, e confere o SHA-256 de cada arquivo (`voz.go`). Enquanto baixa, o botão mostra a porcentagem. Sem internet, só a voz fica indisponível.
+- Cópias de teste: ligue com `ATENDENTE_SEM_VOZ=1` para não baixar 267 MB em cada uma (o download só começa se alguém clicar no microfone).
+- Se a voz não ficar pronta: veja as linhas `VOZ:` em `atendente.log`. Apagar `dados/voz/` e religar baixa tudo de novo.
+
+## Contatos
+
+- Na aba Contatos, clicar em um contato abre a ficha dele (`#contatos/<id>`), não a conversa: dados, o que a IA já entendeu, etiquetas, anotações da equipe (`anotacoes`, só no painel), agendamentos e a linha do tempo (transferências, quem atendeu, horários marcados, remarcados e cancelados, mudanças de etiqueta). É a tela do acompanhamento. O botão Abrir conversa leva ao chat.
+- A linha do tempo vem do banco (mensagens com `de` igual a `sistema`), não só das últimas 80 mensagens da memória.
+
+## Agenda e horários
+
+- Os dias e horários das Regras da agenda são a fonte única do horário de funcionamento: o calendário mostra o que está fechado e as pausas, e o texto que o assistente informa (`horario`, variável `{{HORARIO}}`) é escrito pelo programa a partir deles toda vez que as regras são salvas (`horarioPorExtenso` em `agenda.go`).
+- A configuração inicial tem o passo Horários: a pessoa confere os dias, as pausas de almoço e os serviços, e diz se o negócio atende com hora marcada. Em instalação nova a agenda nasce ligada. Quando a pessoa usa Preencher com IA (por texto ou por voz), a IA já devolve os dias, as pausas e os serviços prontos (`agendaDaIA` em `ia.go`).
+- Com a agenda ligada, marcar, remarcar (`acao` igual a `remarcar`) e desmarcar são tarefas do assistente. Ele só usa horários livres da lista, respeita pausas, vagas e antecedência, e não chama uma pessoa para isso. Lead quente só é transferido sozinho quando a agenda está desligada.
+- Se o assistente disser que "um atendente confirma o horário", a agenda está desligada ou sem dias abertos: confira em Agenda, Regras da agenda.
 
 ## Banco de dados
 
@@ -101,14 +123,16 @@ Olhe `atendente.log`. Cada mensagem tratada gera uma linha `MENSAGEM:` e cada re
 - `cerebro.go`: chamada ao claude, reserva pela API e modo teste.
 - `ia.go`: ajudas da IA (preencher cadastro, melhorar texto, montar cérebro, resumir material).
 - `conhecimento.go`: leitura de PDF, DOCX e PPTX, trechos e busca.
-- `agenda.go`: horários livres, marcar e cancelar.
+- `agenda.go`: horários livres, marcar, remarcar e cancelar, e o horário de funcionamento por extenso.
 - `midia.go`: mídias recebidas e enviadas, fotos de perfil, etiquetas e relatório.
 - `whats.go`: conexão, QR, mensagens, limites e avisos.
 - `banco.go`: banco de dados (SQLite), gravação do que mudou e cópia diária.
 - `acesso.go`: contas, senhas, sessões, permissões por rota e registro de acessos.
-- `contatos.go`: lista de contatos, filtros e planilha.
+- `contatos.go`: lista de contatos, filtros, planilha e ficha do contato (dados, anotações e linha do tempo).
 - `conexao.go`: estado do login do Claude e o login iniciado pelo painel.
 - `openai.go`: ChatGPT pela chave da OpenAI (pedido sem ferramentas, modelos da conta, rotas da chave).
 - `cofre.go`: cofre de senhas do sistema, onde a chave da OpenAI fica guardada.
+- `voz.go`: reconhecimento de voz local (baixa e confere os arquivos para `dados/voz/` e serve em `/voz/`). Na página: `voz.js` e `voz-worker.js`.
+- `web/horarios.js`: editores de dias, pausas e serviços da configuração inicial. `web/etiquetas.js`: a lista única de etiquetas.
 - `painel.go`: servidor local e rotas. `web/`: a página (`acesso.js` é a tela de entrada, `equipe.js` a equipe em Ajustes, `conexao.js` a janela Conectar a IA).
 - `dados/`: `atendente.db` (o banco), `copias/`, `sessao.db` (sessão do WhatsApp), `textos/`, `conhecimento/`, `midia/`, `fotos/`.

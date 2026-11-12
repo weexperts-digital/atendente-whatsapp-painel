@@ -910,7 +910,9 @@ details.cartao > .pilha > .campo, details.cartao > .pilha > .acoes { max-width: 
   .horario .btn { grid-column: 1 / -1; }
   .inicio-caixa { padding: 16px; }
   .passos li span { display: none; }
-  .passos li[aria-current="step"] span { display: block; }
+  /* No celular só aparece o nome do passo atual, e ele pode passar da largura da barrinha. */
+  .passos li[aria-current="step"] span { display: block; overflow: visible; text-overflow: clip; }
+  .passos li:nth-last-child(-n+2)[aria-current="step"] span { align-self: flex-end; }
   .passos { margin: 20px 0 24px; }
   .vazio { padding: 28px 20px; }
   .bolha, .resposta-ia { max-width: 88%; }

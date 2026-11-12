@@ -9,14 +9,14 @@ Esta é a versão com painel completo. A versão mais simples, usada na palestra
 ## O que ele faz
 
 - **Conversas**: uma tela com cara de WhatsApp, com foto do contato, áudio, imagem, vídeo e PDF dentro da conversa. Quem foi transferido entra em uma fila; a pessoa da equipe clica em Iniciar atendimento, responde por texto, arquivo ou áudio, e depois devolve ao assistente. O cliente não vê quem está atendendo.
-- **Contatos**: todo mundo que já escreveu para o negócio em uma tabela, com busca, filtros e planilha para baixar.
+- **Contatos**: todo mundo que já escreveu para o negócio em uma tabela, com busca, filtros e planilha para baixar. Clicar em um contato abre a ficha dele: dados, o que a IA já entendeu, etiquetas, anotações da equipe, agendamentos e o histórico, para fazer o acompanhamento.
 - **Login e equipe**: o primeiro acesso cria a conta do super administrador. Ele cria as contas da equipe (administrador ou atendente) e vê o registro de quem entrou e do que cada pessoa fez.
 - **Banco de dados**: contatos, todas as mensagens, agenda e contas ficam em um banco SQLite dentro da pasta do programa, com uma cópia de segurança por dia. Não precisa instalar nem configurar nada.
-- **Etiquetas e relatório**: a IA cria etiquetas sozinha durante o atendimento e você também marca as suas. Veja um relatório simples de conversas, transferências, agendamentos e respostas.
+- **Etiquetas e relatório**: cada etiqueta existe uma vez só. A IA usa as que já existem, cria uma nova só quando nenhuma serve e troca conforme o cliente avança (de "quer agendar" para "agendado", por exemplo). Você renomeia, junta e apaga em um lugar só. Veja também um relatório simples de conversas, transferências, agendamentos e respostas.
 - **Equipe e IA na mesma conversa**: tudo o que a equipe conversa com o cliente fica guardado. Quando a conversa volta para o assistente, ele lê o atendimento inteiro e continua de onde a equipe parou.
 - **Claude ou ChatGPT**: conecte o Claude com o login da sua conta, por um botão, ou use o ChatGPT com uma chave da OpenAI.
 - **Qualificação de leads**: pontua cada pessoa de 0 a 100 e avisa no seu WhatsApp quando o lead esquenta ou pede uma pessoa.
-- **Agenda**: um calendário de semana, dia e mês. Você cadastra serviços, dias e horários; o assistente oferece os horários livres e marca sozinho.
+- **Agenda**: um calendário de semana, dia e mês. Os dias, horários, pausas de almoço e serviços que você informa na configuração inicial já valem no calendário. O assistente oferece os horários livres e marca, remarca e desmarca sozinho, sem chamar uma pessoa.
 - **Base de conhecimento**: envie PDF, Word, PowerPoint ou texto. A IA lê, resume e passa a responder com base nos seus materiais.
 - **Assistente editável**: personalidade, cérebro e regras de transbordo em abas separadas, com variáveis como `{{NEGOCIO}}` e um botão para pedir mudanças à IA.
 - **Treinar**: converse com o assistente dentro do painel, veja o que ele entendeu e corrija as respostas. As correções viram aprendizados.
@@ -67,11 +67,12 @@ O painel abre em `http://localhost:8787` e guia você:
 
 1. Crie a conta do super administrador: seu nome, e-mail e uma senha, digitada duas vezes. Guarde bem essa senha.
 2. Conecte a IA: clique em Conectar o Claude, entre na sua conta do Claude no navegador e autorize. Não precisa de terminal. Se preferir o ChatGPT, escolha a aba ChatGPT e cole uma chave da OpenAI.
-3. Conte sobre o seu negócio. Dá para escrever em poucas palavras e deixar a IA preencher os campos.
-4. Escolha o nome e o tom do assistente.
-5. Informe o WhatsApp que recebe os avisos de lead quente.
-6. Leia o código QR com o WhatsApp do negócio (WhatsApp, Configurações, Aparelhos conectados, Conectar aparelho).
-7. Ligue o atendente e mande um "Oi" de outro celular.
+3. Conte sobre o seu negócio. Dá para escrever em poucas palavras, ou falar no microfone, e deixar a IA preencher os campos. A voz é entendida no seu próprio computador, sem chave e sem enviar o áudio para fora.
+4. Confira os horários: dias, hora de abrir e fechar, pausa do almoço e serviços. Diga se o negócio atende com hora marcada.
+5. Escolha o nome e o tom do assistente.
+6. Informe o WhatsApp que recebe os avisos de lead quente.
+7. Leia o código QR com o WhatsApp do negócio (WhatsApp, Configurações, Aparelhos conectados, Conectar aparelho).
+8. Ligue o atendente e mande um "Oi" de outro celular.
 
 Para dar acesso a outras pessoas, vá em Ajustes, Equipe e acessos.
 
@@ -116,6 +117,7 @@ A descrição das rotas do painel está em [docs/API.md](docs/API.md).
 - Não existe recuperação de senha por e-mail. Quem perde a senha do super administrador precisa estar no computador para criar outra.
 - Nenhuma chave de API é gravada em arquivo. A chave da OpenAI, quando usada, fica no cofre de senhas do sistema (Keychain no Mac, Gerenciador de Credenciais no Windows) e a página só mostra as 4 últimas letras.
 - Com o ChatGPT, vale a mesma regra do Claude: o pedido leva só texto e não declara nenhuma ferramenta.
+- A voz do microfone é entendida no seu próprio navegador (Whisper), sem chave. O áudio não é gravado em disco nem enviado para fora. Na primeira vez, o programa baixa 267 MB com o modelo de voz e confere cada arquivo antes de usar.
 - O texto das conversas e dos materiais é enviado ao Claude, ou à OpenAI se você escolher o ChatGPT, para gerar as respostas. Fora isso, nada sai do computador.
 
 ## Avisos importantes

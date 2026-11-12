@@ -76,7 +76,8 @@ func nivelDaRota(metodo, caminho string) int {
 		"/api/textos", "/api/textos/restaurar",
 		"/api/ia/negocio", "/api/ia/melhorar", "/api/ia/cerebro",
 		"/api/ia/conexao", "/api/ia/conectar", "/api/ia/conectar/codigo", "/api/ia/conectar/cancelar",
-		"/api/ia/openai", "/api/ia/openai/modelos", "/api/ia/openai/remover", "/api/ia/provedor", "/api/treinar", "/api/aprendizado",
+		"/api/ia/openai", "/api/ia/openai/modelos", "/api/ia/openai/remover", "/api/ia/provedor",
+		"/api/etiquetas/renomear", "/api/etiquetas/excluir", "/api/treinar", "/api/aprendizado",
 		"/api/conhecimento/enviar", "/api/conhecimento/texto", "/api/conhecimento/alterar", "/api/conhecimento/excluir":
 		return nivelAdmin
 	case "/api/config", "/api/agenda":
@@ -86,6 +87,10 @@ func nivelDaRota(metodo, caminho string) int {
 		return nivelLogado
 	}
 	if strings.HasPrefix(caminho, "/api/") || strings.HasSuffix(caminho, ".csv") {
+		return nivelLogado
+	}
+	// Arquivos do reconhecimento de voz: só para quem entrou (voz.go confere de novo).
+	if strings.HasPrefix(caminho, "/voz/") {
 		return nivelLogado
 	}
 	return nivelLivre // os arquivos da pagina (a tela de entrada precisa deles)
@@ -460,6 +465,8 @@ var textosDeAcao = map[string]string{
 	"ia_openai_ativada":     "Passou a usar o ChatGPT",
 	"ia_claude_ativado":     "Voltou a usar o Claude",
 	"ia_chave_removida":     "Removeu a chave da OpenAI",
+	"etiqueta_renomeada":    "Renomeou ou juntou uma etiqueta",
+	"etiqueta_apagada":      "Apagou uma etiqueta de todos os contatos",
 }
 
 // registrar anota quem fez o que. Aparece em Ajustes, para o super administrador.

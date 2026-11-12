@@ -40,6 +40,8 @@ func (a *App) rotas() *http.ServeMux {
 	mux.HandleFunc("/agenda.csv", a.rotaAgendaCSV)
 	mux.HandleFunc("/contatos.csv", a.rotaContatosCSV)
 	mux.HandleFunc("/api/contatos", a.rotaContatos)
+	a.rotasDaFicha(mux) // ficha do contato (contatos.go)
+	a.rotasDeVoz(mux)   // reconhecimento de voz local (voz.go)
 
 	mux.HandleFunc("/api/sessao", a.rotaSessao)
 	mux.HandleFunc("/api/primeiro-acesso", a.rotaPrimeiroAcesso)
@@ -63,6 +65,9 @@ func (a *App) rotas() *http.ServeMux {
 	mux.HandleFunc("/api/responder", a.rotaResponder)
 	mux.HandleFunc("/api/lead/excluir", a.rotaExcluirLead)
 	mux.HandleFunc("/api/lead/etiquetas", a.rotaEtiquetas)
+	mux.HandleFunc("/api/etiquetas", a.rotaCatalogoDeEtiquetas)
+	mux.HandleFunc("/api/etiquetas/renomear", a.rotaRenomearEtiqueta)
+	mux.HandleFunc("/api/etiquetas/excluir", a.rotaExcluirEtiqueta)
 	mux.HandleFunc("/api/enviar-arquivo", a.rotaEnviarArquivo)
 	mux.HandleFunc("/api/midia", a.rotaMidia)
 	mux.HandleFunc("/api/foto", a.rotaFoto)
@@ -189,7 +194,13 @@ func (a *App) protegido(proximo http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		// 'wasm-unsafe-eval' e os workers são do reconhecimento de voz, que roda dentro da
+		// página (WebAssembly) com arquivos servidos por este programa. Nada vem de fora.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		// Isolamento entre origens: deixa o reconhecimento de voz usar mais de um núcleo.
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		// Daqui para dentro, so quem esta logado e tem permissao para a rota.
 		r = a.conferirAcesso(w, r)
 		if r == nil {
@@ -784,13 +795,105 @@ func (a *App) rotaEtiquetas(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	antes := l.Etiquetas
-	l.Etiquetas = limparEtiquetas(p.Etiquetas)
+	// Sem etiqueta repetida no painel: se já existe uma igual (sem contar maiúsculas e
+	// acentos) em outro contato, vale a grafia que já existe.
+	emUso := a.etiquetasEmUso()
+	novas := limparEtiquetas(p.Etiquetas)
+	for i, e := range novas {
+		for _, existente := range emUso {
+			if chaveTexto(existente) == chaveTexto(e) {
+				novas[i] = existente
+				break
+			}
+		}
+	}
+	l.Etiquetas = limparEtiquetas(novas)
 	l.etiquetasEditadas(antes)
+	if postas, tiradas := diferencaDeEtiquetas(antes, l.Etiquetas); len(postas)+len(tiradas) > 0 {
+		l.evento("etiqueta", fraseDeEtiquetas(ouPadrao(nomeDe(r), "a equipe"), postas, tiradas))
+	}
+	a.unificarEtiquetas()
 	etiquetas := append([]string{}, l.Etiquetas...)
 	daIA := append([]string{}, l.EtiquetasIA...)
 	a.salvarLeads()
 	a.mu.Unlock()
 	responderOK(w, map[string]any{"etiquetas": etiquetas, "etiquetas_ia": daIA})
+}
+
+// rotaCatalogoDeEtiquetas lista as etiquetas do painel, cada uma uma vez só.
+func (a *App) rotaCatalogoDeEtiquetas(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	lista := a.catalogoDeEtiquetas()
+	a.mu.Unlock()
+	responderJSON(w, http.StatusOK, map[string]any{"etiquetas": lista})
+}
+
+// rotaRenomearEtiqueta troca o nome de uma etiqueta em todos os contatos. Se o nome novo
+// já existir, as duas viram uma só.
+func (a *App) rotaRenomearEtiqueta(w http.ResponseWriter, r *http.Request) {
+	var p struct {
+		De   string `json:"de"`
+		Para string `json:"para"`
+	}
+	if !lerPedido(w, r, &p) {
+		return
+	}
+	de := strings.TrimSpace(p.De)
+	limpas := limparEtiquetas([]string{p.Para})
+	if de == "" || len(limpas) == 0 {
+		responderErro(w, http.StatusBadRequest, "Escreva o nome novo da etiqueta.")
+		return
+	}
+	para := limpas[0]
+	a.mu.Lock()
+	// Se o nome novo já existe com outra grafia, fica a grafia que já existe.
+	for _, existente := range a.etiquetasEmUso() {
+		if chaveTexto(existente) == chaveTexto(para) && chaveTexto(existente) != chaveTexto(de) {
+			para = existente
+			break
+		}
+	}
+	mudaram := a.renomearEtiqueta(de, para)
+	if mudaram > 0 {
+		a.unificarEtiquetas()
+		a.salvarLeads()
+	}
+	lista := a.catalogoDeEtiquetas()
+	a.mu.Unlock()
+	if mudaram == 0 {
+		responderErro(w, http.StatusNotFound, "Não achei essa etiqueta. Atualize a página e tente de novo.")
+		return
+	}
+	a.registrar(usuarioDe(r), "etiqueta_renomeada", fmt.Sprintf("%s virou %s em %d contatos", de, para, mudaram))
+	responderOK(w, map[string]any{"etiquetas": lista, "nome": para, "contatos": mudaram})
+}
+
+// rotaExcluirEtiqueta tira uma etiqueta de todos os contatos.
+func (a *App) rotaExcluirEtiqueta(w http.ResponseWriter, r *http.Request) {
+	var p struct {
+		Nome string `json:"nome"`
+	}
+	if !lerPedido(w, r, &p) {
+		return
+	}
+	nome := strings.TrimSpace(p.Nome)
+	if nome == "" {
+		responderErro(w, http.StatusBadRequest, "Diga qual etiqueta apagar.")
+		return
+	}
+	a.mu.Lock()
+	mudaram := a.renomearEtiqueta(nome, "")
+	if mudaram > 0 {
+		a.salvarLeads()
+	}
+	lista := a.catalogoDeEtiquetas()
+	a.mu.Unlock()
+	if mudaram == 0 {
+		responderErro(w, http.StatusNotFound, "Não achei essa etiqueta. Atualize a página e tente de novo.")
+		return
+	}
+	a.registrar(usuarioDe(r), "etiqueta_apagada", fmt.Sprintf("%s saiu de %d contatos", nome, mudaram))
+	responderOK(w, map[string]any{"etiquetas": lista, "contatos": mudaram})
 }
 
 func (a *App) rotaRelatorio(w http.ResponseWriter, r *http.Request) {
@@ -945,6 +1048,13 @@ func (a *App) rotaConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	nova.normalizar()
+	// Os dias da agenda são a fonte do horário de funcionamento: quando as regras da
+	// agenda chegam no pedido, o texto que o assistente informa é escrito a partir delas.
+	if _, veioAgenda := chaves["agenda"]; veioAgenda {
+		if texto := nova.Agenda.horarioPorExtenso(); texto != "" {
+			nova.Horario = texto
+		}
+	}
 	if nova.Negocio == "" && a.cfg.Salvo {
 		a.mu.Unlock()
 		responderErro(w, http.StatusBadRequest, "Preencha o nome do negócio.")
@@ -1032,12 +1142,13 @@ func (a *App) rotaIANegocio(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusBadRequest, "Conte um pouco mais sobre o negócio para a IA conseguir preencher.")
 		return
 	}
-	campos, err := a.preencherNegocio(p.Descricao)
+	campos, agenda, err := a.preencherNegocio(p.Descricao)
 	if err != nil {
 		erroDaIA(w, err)
 		return
 	}
-	responderOK(w, map[string]any{"campos": campos})
+	// agenda vem nula quando a descrição não fala de horário nem de serviço com hora marcada.
+	responderOK(w, map[string]any{"campos": campos, "agenda": agenda})
 }
 
 func (a *App) rotaIAMelhorar(w http.ResponseWriter, r *http.Request) {
@@ -1107,7 +1218,8 @@ func (a *App) rotaTreinar(w http.ResponseWriter, r *http.Request) {
 		Nome: p.Lead.Nome, Necessidade: p.Lead.Necessidade, Orcamento: p.Lead.Orcamento,
 		Decisor: p.Lead.Decisor, Prazo: p.Lead.Prazo, Pontuacao: limitar(int(p.Lead.Pontuacao), 0, 100),
 		Classificacao: ouPadrao(p.Lead.Classificacao, "indefinido"), Etapa: p.Lead.Etapa, Resumo: p.Lead.Resumo,
-		Etiquetas: limparEtiquetas(p.Lead.Etiquetas),
+		// No simulador, todas as etiquetas contam como postas pela IA, para ela poder trocar.
+		Etiquetas: limparEtiquetas(p.Lead.Etiquetas), EtiquetasIA: limparEtiquetas(p.Lead.Etiquetas),
 	}
 
 	a.mu.Lock()

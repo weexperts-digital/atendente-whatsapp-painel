@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -10,58 +11,63 @@ import (
 
 func TestEtiquetasDaIA(t *testing.T) {
 	l := &Lead{Etiquetas: []string{"VIP"}}
-	emUso := []string{"Orçamento Pedido", "VIP"}
+	emUso := []string{"Orçamento Pedido", "VIP", "Corte"}
 
-	l.etiquetasDaIA([]string{"orcamento pedido", " Lavagem. ", "vip"}, emUso)
-	if got := strings.Join(l.Etiquetas, "|"); got != "VIP|Orçamento Pedido|lavagem" {
+	// Primeira resposta: a IA usa a grafia do painel, limpa e não repete.
+	postas, tiradas := l.etiquetasDaIA([]string{"orcamento pedido", " corte. ", "vip", "novo contato"}, emUso)
+	if got := strings.Join(l.Etiquetas, "|"); got != "VIP|Orçamento Pedido|Corte|novo contato" {
 		t.Fatalf("devia reaproveitar a grafia do painel, limpar e não repetir: %s", got)
 	}
-	if got := strings.Join(l.EtiquetasIA, "|"); got != "Orçamento Pedido|lavagem" {
-		t.Errorf("só as novas contam como criadas pela IA: %s", got)
+	if strings.Join(l.EtiquetasIA, "|") != "Orçamento Pedido|Corte|novo contato" || len(postas) != 3 || len(tiradas) != 0 {
+		t.Errorf("só as novas são da IA: %v, postas %v, tiradas %v", l.EtiquetasIA, postas, tiradas)
 	}
 
-	// O que não serve como etiqueta: temperatura, dado pessoal, frase longa.
-	antes := len(l.Etiquetas)
-	l.etiquetasDaIA([]string{"quente", "27 99999-1234", "joao@exemplo.com"}, emUso)
-	l.etiquetasDaIA([]string{"cliente que perguntou sobre muitas coisas diferentes", "", "Lead Quente"}, emUso)
-	if len(l.Etiquetas) != antes {
-		t.Errorf("etiqueta ruim entrou: %v", l.Etiquetas)
+	// A pessoa avançou: a IA troca a etiqueta de momento. A antiga sai, a da pessoa (VIP) fica.
+	postas, tiradas = l.etiquetasDaIA([]string{"corte", "agendado"}, emUso)
+	if got := strings.Join(l.Etiquetas, "|"); got != "VIP|Corte|agendado" {
+		t.Fatalf("a IA devia trocar as etiquetas dela: %s", got)
+	}
+	if strings.Join(postas, "|") != "agendado" || strings.Join(tiradas, "|") != "Orçamento Pedido|novo contato" {
+		t.Errorf("postas %v, tiradas %v", postas, tiradas)
+	}
+	if frase := fraseDeEtiquetas("a IA", postas, tiradas); frase != "Etiquetas: a IA pôs agendado e tirou Orçamento Pedido, novo contato" {
+		t.Errorf("frase do histórico: %q", frase)
 	}
 
-	// No máximo 3 por resposta.
-	l.etiquetasDaIA([]string{"a1", "a2", "a3", "a4"}, nil)
-	if temEtiqueta(l.Etiquetas, "a4") || !temEtiqueta(l.Etiquetas, "a3") {
-		t.Errorf("devia aceitar só 3 por vez: %v", l.Etiquetas)
+	// Lista vazia ou só com coisa ruim não apaga nada.
+	antes := strings.Join(l.Etiquetas, "|")
+	for _, ruim := range [][]string{nil, {}, {"quente", "27 99999-1234", "joao@exemplo.com"}, {"cliente que perguntou sobre muitas coisas diferentes", "", "Lead Quente"}} {
+		if p, tr := l.etiquetasDaIA(ruim, emUso); len(p)+len(tr) != 0 || strings.Join(l.Etiquetas, "|") != antes {
+			t.Errorf("resposta sem etiqueta boa não pode mexer em nada: %v -> %v", ruim, l.Etiquetas)
+		}
 	}
 
-	// Uma pessoa tira uma etiqueta da IA: ela não volta. Se a pessoa puser de novo, volta a valer.
-	semLavagem := semEtiqueta(l.Etiquetas, "lavagem")
+	// Uma pessoa tira uma etiqueta da IA: ela não volta. Se a pessoa puser de novo, volta a valer e passa a ser da pessoa.
 	velhas := l.Etiquetas
-	l.Etiquetas = semLavagem
+	l.Etiquetas = semEtiqueta(l.Etiquetas, "agendado")
 	l.etiquetasEditadas(velhas)
-	l.etiquetasDaIA([]string{"Lavagem"}, nil)
-	if temEtiqueta(l.Etiquetas, "lavagem") || temEtiqueta(l.EtiquetasIA, "lavagem") || !temEtiqueta(l.EtiquetasFora, "lavagem") {
+	l.etiquetasDaIA([]string{"corte", "Agendado"}, emUso)
+	if temEtiqueta(l.Etiquetas, "agendado") || !temEtiqueta(l.EtiquetasFora, "agendado") {
 		t.Errorf("etiqueta tirada por uma pessoa não pode voltar: %v / fora %v", l.Etiquetas, l.EtiquetasFora)
 	}
 	velhas = l.Etiquetas
-	l.Etiquetas = append(append([]string{}, l.Etiquetas...), "lavagem")
+	l.Etiquetas = append(append([]string{}, l.Etiquetas...), "agendado")
 	l.etiquetasEditadas(velhas)
-	if temEtiqueta(l.EtiquetasFora, "lavagem") || temEtiqueta(l.EtiquetasIA, "lavagem") {
-		t.Errorf("etiqueta posta de volta por uma pessoa deixa de estar vetada e não é da IA: fora %v, ia %v", l.EtiquetasFora, l.EtiquetasIA)
+	if temEtiqueta(l.EtiquetasFora, "agendado") || temEtiqueta(l.EtiquetasIA, "agendado") {
+		t.Errorf("posta de volta por uma pessoa: fora %v, ia %v", l.EtiquetasFora, l.EtiquetasIA)
+	}
+	// E a IA não tira etiqueta de pessoa, mesmo deixando fora da lista.
+	l.etiquetasDaIA([]string{"cliente"}, emUso)
+	if !temEtiqueta(l.Etiquetas, "VIP") || !temEtiqueta(l.Etiquetas, "agendado") || !temEtiqueta(l.Etiquetas, "cliente") || temEtiqueta(l.Etiquetas, "Corte") {
+		t.Errorf("a IA só mexe nas dela: %v", l.Etiquetas)
 	}
 
-	// Passou do limite da IA: sai a mais antiga da própria IA, nunca a de uma pessoa.
-	for i := 0; i < 10; i++ {
-		l.etiquetasDaIA([]string{fmt.Sprintf("assunto %d", i)}, nil)
+	// No máximo 5 etiquetas da IA por conversa, e nunca mais de 12 no total.
+	muitas := &Lead{}
+	muitas.etiquetasDaIA([]string{"a1", "a2", "a3", "a4", "a5", "a6", "a7"}, nil)
+	if len(muitas.EtiquetasIA) != maxEtiquetasIA {
+		t.Errorf("limite da IA: %v", muitas.EtiquetasIA)
 	}
-	if len(l.EtiquetasIA) != maxEtiquetasIA || !temEtiqueta(l.Etiquetas, "VIP") || !temEtiqueta(l.Etiquetas, "lavagem") {
-		t.Errorf("limite da IA: %d etiquetas da IA, todas: %v", len(l.EtiquetasIA), l.Etiquetas)
-	}
-	if !temEtiqueta(l.Etiquetas, "assunto 9") || temEtiqueta(l.Etiquetas, "assunto 0") {
-		t.Errorf("devia ficar com as mais novas: %v", l.Etiquetas)
-	}
-
-	// Conversa cheia de etiquetas postas por pessoas: a IA não mexe.
 	cheia := &Lead{}
 	for i := 0; i < 12; i++ {
 		cheia.Etiquetas = append(cheia.Etiquetas, fmt.Sprintf("manual %d", i))
@@ -95,6 +101,73 @@ func TestEtiquetasDaIAFicamGuardadas(t *testing.T) {
 	}
 	if volta == nil || strings.Join(volta.Etiquetas, "|") != "quer agendar" || strings.Join(volta.EtiquetasIA, "|") != "quer agendar" || strings.Join(volta.EtiquetasFora, "|") != "orçamento pedido" {
 		t.Errorf("etiquetas depois de religar: %+v", volta)
+	}
+}
+
+func TestEtiquetasUnicasNoPainel(t *testing.T) {
+	a := novoApp()
+	a.leads["a"] = &Lead{ID: "a", Etiquetas: []string{"Corte", "cliente"}, EtiquetasIA: []string{"Corte"}}
+	a.leads["b"] = &Lead{ID: "b", Etiquetas: []string{"corte de cabelo", "Cliente"}, EtiquetasIA: []string{"corte de cabelo"}}
+	a.leads["c"] = &Lead{ID: "c", Etiquetas: []string{"corte", "corte de cabelo"}}
+
+	// O catálogo não repete: maiúsculas e acentos não criam etiqueta nova.
+	cat := a.catalogoDeEtiquetas()
+	if len(cat) != 3 || chaveTexto(cat[0].Nome) != "cliente" && chaveTexto(cat[0].Nome) != "corte" {
+		t.Fatalf("catálogo: %+v", cat)
+	}
+	conta := map[string]etiquetaDoPainel{}
+	for _, e := range cat {
+		conta[chaveTexto(e.Nome)] = e
+	}
+	if conta["corte"].Contatos != 2 || conta["corte"].DaIA != 1 || conta["cliente"].Contatos != 2 || conta["corte de cabelo"].Contatos != 2 {
+		t.Errorf("contagem do catálogo: %+v", cat)
+	}
+
+	// Juntar "corte de cabelo" em "corte": quem tinha as duas fica com uma só.
+	w := postar(a.rotaRenomearEtiqueta, `{"de":"corte de cabelo","para":"CORTE"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("juntar etiquetas: %d %s", w.Code, w.Body.String())
+	}
+	for id, quer := range map[string]string{"a": "Corte|cliente", "b": "Corte|Cliente", "c": "corte"} {
+		if got := strings.Join(a.leads[id].Etiquetas, "|"); chaveTexto(got) != chaveTexto(quer) {
+			t.Errorf("contato %s depois de juntar: %s", id, got)
+		}
+	}
+	if len(a.leads["c"].Etiquetas) != 1 || !temEtiqueta(a.leads["b"].EtiquetasIA, "corte") {
+		t.Errorf("juntar não pode deixar repetida e mantém o que era da IA: c=%v b.ia=%v", a.leads["c"].Etiquetas, a.leads["b"].EtiquetasIA)
+	}
+	if len(a.catalogoDeEtiquetas()) != 2 {
+		t.Errorf("depois de juntar sobram 2 etiquetas: %+v", a.catalogoDeEtiquetas())
+	}
+
+	// Apagar tira de todos os contatos e a IA não repõe nesses contatos.
+	if w := postar(a.rotaExcluirEtiqueta, `{"nome":"cliente"}`); w.Code != http.StatusOK {
+		t.Fatalf("apagar etiqueta: %d %s", w.Code, w.Body.String())
+	}
+	if temEtiqueta(a.leads["a"].Etiquetas, "cliente") || !temEtiqueta(a.leads["a"].EtiquetasFora, "cliente") {
+		t.Errorf("apagar: %v fora %v", a.leads["a"].Etiquetas, a.leads["a"].EtiquetasFora)
+	}
+	if w := postar(a.rotaExcluirEtiqueta, `{"nome":"não existe"}`); w.Code != http.StatusNotFound {
+		t.Errorf("apagar etiqueta que não existe devia dar 404, deu %d", w.Code)
+	}
+	if w := postar(a.rotaRenomearEtiqueta, `{"de":"corte","para":"  "}`); w.Code != http.StatusBadRequest {
+		t.Errorf("renomear para vazio devia dar 400, deu %d", w.Code)
+	}
+
+	// Editar as etiquetas de um contato pelo painel usa a grafia que já existe e anota no histórico.
+	a.leads["d"] = &Lead{ID: "d", Telefone: "5527999990004"}
+	w = postar(a.rotaEtiquetas, `{"id":"d","etiquetas":["CORTE","novidade"]}`)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"Corte"`) {
+		t.Fatalf("etiquetas do contato: %d %s", w.Code, w.Body.String())
+	}
+	d := a.leads["d"]
+	ultimo := d.Historico[len(d.Historico)-1]
+	if ultimo.De != "sistema" || ultimo.Evento != "etiqueta" || !strings.Contains(ultimo.Texto, "pôs Corte, novidade") {
+		t.Errorf("a mudança de etiqueta devia entrar no histórico: %+v", ultimo)
+	}
+	// E esse registro interno nunca vai para a IA.
+	if entrada := montarEntrada(d.Historico, []string{"oi"}, d, nil); strings.Contains(entrada, "pôs Corte") {
+		t.Errorf("registro de etiqueta foi para a IA:\n%s", entrada)
 	}
 }
 
@@ -195,5 +268,29 @@ func TestIAReceJanelaNormalSemEquipe(t *testing.T) {
 	grande := montarEntrada([]Msg{{De: "cliente", Texto: strings.Repeat("a", 5000)}}, []string{"x"}, nil, nil)
 	if len(grande) > 1500 {
 		t.Errorf("mensagem anterior enorme devia ser cortada, a entrada ficou com %d letras", len(grande))
+	}
+}
+
+func TestUnificarEtiquetasAntigas(t *testing.T) {
+	a := novoApp()
+	a.leads["a"] = &Lead{ID: "a", Etiquetas: []string{"cliente", "Orçamento"}}
+	a.leads["b"] = &Lead{ID: "b", Etiquetas: []string{"Cliente", "orcamento", "ORÇAMENTO"}, EtiquetasIA: []string{"orcamento"}}
+	a.leads["c"] = &Lead{ID: "c", Etiquetas: []string{"Cliente", "Orçamento"}}
+	if n := a.unificarEtiquetas(); n != 2 {
+		t.Errorf("deviam mudar 2 contatos, mudaram %d", n)
+	}
+	for id, l := range a.leads {
+		if strings.Join(l.Etiquetas, "|") != "Cliente|Orçamento" {
+			t.Errorf("contato %s: %v", id, l.Etiquetas)
+		}
+	}
+	if strings.Join(a.leads["b"].EtiquetasIA, "|") != "Orçamento" {
+		t.Errorf("as etiquetas da IA acompanham a grafia: %v", a.leads["b"].EtiquetasIA)
+	}
+	if em := a.etiquetasEmUso(); len(em) != 2 {
+		t.Errorf("a lista em uso não pode repetir: %v", em)
+	}
+	if n := a.unificarEtiquetas(); n != 0 {
+		t.Errorf("segunda passada não muda nada, mudou %d", n)
 	}
 }

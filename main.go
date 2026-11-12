@@ -50,6 +50,7 @@ func main() {
 	_ = os.WriteFile("atendente.pid", []byte(strconv.Itoa(os.Getpid())), 0o644)
 	go app.cuidarDoBanco()
 	go app.vigiarIA()
+	go app.prepararVoz()
 
 	if _, err := app.iniciarPainel(); err != nil {
 		log.Fatalf("ERRO: não consegui abrir o painel: %v", err)

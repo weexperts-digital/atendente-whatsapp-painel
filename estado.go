@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	versao = "2.4.0"
+	versao = "2.5.0"
 
 	statusQualificando = "qualificando"
 	statusQualificado  = "qualificado"
@@ -317,6 +317,7 @@ type Lead struct {
 	Etiquetas     []string  `json:"etiquetas"`
 	EtiquetasIA   []string  `json:"etiquetas_ia,omitempty"`   // as que a IA criou (as outras foram postas por uma pessoa)
 	EtiquetasFora []string  `json:"etiquetas_fora,omitempty"` // as que uma pessoa tirou: a IA nao repoe
+	Anotacoes     string    `json:"anotacoes,omitempty"`      // anotacoes da equipe sobre o contato (so no painel)
 	Atendente     string    `json:"atendente"`                // quem da equipe esta com a conversa
 	FotoID        string    `json:"foto_id"`                  // vazio = sem foto de perfil
 	FotoEm        time.Time `json:"foto_em"`                  // ultima vez que a foto foi conferida
@@ -470,6 +471,11 @@ func (a *App) lerDoBanco() {
 	}
 	for _, l := range leads {
 		a.leads[l.ID] = l
+	}
+	// Etiquetas unicas: dados de versoes antigas podem ter a mesma etiqueta com grafias diferentes.
+	if n := a.unificarEtiquetas(); n > 0 {
+		log.Printf("ETIQUETAS: grafia unificada em %d contatos", n)
+		a.salvarLeads()
 	}
 	agenda, err := a.banco.lerAgenda()
 	if err != nil {

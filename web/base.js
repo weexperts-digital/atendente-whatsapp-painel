@@ -382,6 +382,28 @@ function botao(texto, opc) {
   return b;
 }
 
+// microfoneDe devolve o botão de narrar por voz ligado a uma caixa de texto, ou nulo se o
+// reconhecimento de voz não carregou. O que a pessoa fala entra depois do que já estava
+// escrito. aoTerminar roda quando ela para de falar e o texto final chega.
+function microfoneDe(area, obj, chave, aoTerminar) {
+  if (typeof VOZ === 'undefined' || !VOZ || typeof VOZ.botao !== 'function') return null;
+  let antes = null;
+  return VOZ.botao({
+    aoTexto: (texto, final) => {
+      if (antes === null) antes = area.value.trim();
+      const falado = String(texto || '').trim();
+      const junto = antes && falado ? antes + ' ' + falado : (antes || falado);
+      area.value = junto;
+      obj[chave] = junto;
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+      if (final) {
+        antes = null;
+        if (aoTerminar && falado) aoTerminar();
+      }
+    },
+  });
+}
+
 // ---------- Formulários ----------
 
 let contadorCampos = 0;

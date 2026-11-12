@@ -460,3 +460,59 @@ Corpo `{}`. Apaga a chave do cofre e volta para o Claude. 409 se a chave vem da 
 - `POST /api/lead/etiquetas` devolve também `etiquetas_ia`. O que a pessoa tira por essa rota a IA não repõe.
 - `POST /api/treinar` devolve `etiquetas`: as etiquetas da conversa simulada. A página manda de volta em `lead.etiquetas` no pedido seguinte.
 
+## Versão 2.5: agenda pelo onboard, etiquetas únicas, ficha do contato e voz
+
+### Horários e agenda
+
+- Os dias da agenda (`config.agenda.dias`, um item por dia de 0 a 6, com `aberto`, `inicio`, `fim`, `pausa_inicio` e `pausa_fim`) são a fonte do horário de funcionamento. Quando `POST /api/config` recebe a chave `agenda`, o programa escreve `config.horario` a partir dos dias (por exemplo: "Segunda a sexta, das 9h às 19h, com pausa das 12h às 13h30. Sábado, das 8h às 20h, com pausa das 12h às 14h. Domingo, fechado."). A página não envia mais `horario`.
+- `POST /api/ia/negocio` devolve, além de `campos`, a chave `agenda`: `null` quando a descrição não fala de horário nem de serviço com hora marcada, ou
+
+```json
+{
+  "usa": true,
+  "dias": [ { "dia": 0, "aberto": false, "inicio": "09:00", "fim": "18:00", "pausa_inicio": "", "pausa_fim": "" } ],
+  "servicos": [ { "nome": "Corte", "duracao_min": 30, "preco": "R$ 70" } ]
+}
+```
+
+  `dias` traz sempre os 7 dias, ou falta quando a descrição só fala de serviços. Quando há dias, `campos.horario` já vem escrito a partir deles. A configuração inicial usa isso no passo Horários e salva com `POST /api/config { "agenda": { "ativa", "dias", "servicos" } }`.
+- A saída da IA aceita `agendamento.acao` igual a `remarcar`, com a data e a hora novas: o agendamento do cliente muda de horário de uma vez. No histórico vira o registro `remarcou`.
+
+### Etiquetas únicas
+
+- Cada etiqueta existe uma vez só no painel, sem contar maiúsculas e acentos. `POST /api/lead/etiquetas` troca a grafia enviada pela que já existe.
+- `lead.etiquetas`, na saída da IA, passa a ser a lista completa que a conversa deve ter. O programa põe as que faltam e tira as que a própria IA tinha posto e saíram da lista. Lista vazia não muda nada.
+- `GET /api/etiquetas` (quem está logado): `{ "etiquetas": [ { "nome": "corte", "contatos": 3, "da_ia": 2 } ] }`, da mais usada para a menos usada.
+- `POST /api/etiquetas/renomear` (administrador) com `{ "de", "para" }`: troca o nome em todos os contatos. Se `para` já existir, as duas viram uma só. Devolve `{ "etiquetas", "nome", "contatos" }`. 404 se a etiqueta não existir.
+- `POST /api/etiquetas/excluir` (administrador) com `{ "nome" }`: tira a etiqueta de todos os contatos. Devolve `{ "etiquetas", "contatos" }`.
+- Toda mudança de etiqueta vira uma mensagem interna com `de` igual a `sistema` e `evento` igual a `etiqueta`. A tela de conversa não mostra esse registro entre as mensagens, só no histórico interno e na ficha do contato.
+
+### Ficha do contato
+
+`GET /api/contato?id=<id>` (quem está logado):
+
+```json
+{
+  "ok": true,
+  "contato": { "...": "os mesmos campos do lead de GET /api/contatos, sem historico", "anotacoes": "texto" },
+  "agendamentos": [ { "id": "", "lead_id": "", "nome": "", "telefone": "", "telefone_bonito": "", "servico": "", "inicio": "", "duracao_min": 60, "origem": "assistente | painel", "status": "marcado | cancelado", "obs": "", "criado_em": "" } ],
+  "historico": [ { "n": 143, "hora": "2026-11-12T12:15:27Z", "evento": "assumiu", "texto": "...", "autor": "" } ],
+  "historico_tem_mais": false
+}
+```
+
+- `agendamentos`: todos os do contato, do mais novo para o mais antigo. Entram os que têm `lead_id` igual ao contato e os marcados pelo painel com o mesmo telefone.
+- `historico`: os registros internos do contato (mensagens com `de` igual a `sistema`), lidos do banco, do mais novo para o mais antigo, até 500. O último item é sempre `evento` igual a `primeiro_contato`, montado a partir de `criado_em`. Valores de `evento`: `transbordo`, `assumiu`, `devolveu`, `agendou`, `remarcou`, `cancelou`, `etiqueta`. A página mostra tipos desconhecidos pelo texto.
+- 404 quando o contato não existe.
+
+`POST /api/contato/anotacoes` (quem está logado) com `{ "id", "anotacoes" }`: grava as anotações da equipe e devolve `{ "ok": true, "anotacoes": "como ficou gravado" }`. 400 acima de 4000 letras, sem gravar.
+
+Na aba Contatos, clicar em uma linha abre `#contatos/<id>` (a ficha). A conversa fica em `#conversas/<id>`.
+
+### Voz (reconhecimento local)
+
+- `GET /api/voz/estado` (quem está logado): `{ "ok", "pronto", "baixando", "progresso", "erro", "tamanho_mb", "arquivos": { "biblioteca", "wasm_mjs", "wasm", "modelos", "modelo" } }`. `progresso` vai de 0 a 100.
+- `POST /api/voz/preparar` (quem está logado, corpo `{}`): começa ou tenta de novo o download. Mesma resposta.
+- `GET /voz/...` (quem está logado): os arquivos da voz, baixados para `dados/voz/`. Só entrega o que está na lista fixa de `voz.go` e já teve o SHA-256 conferido.
+- Na página, `VOZ.botao({ aoTexto(texto, final), aoEstado(estado, info) })` devolve o botão do microfone. `texto` é sempre o texto inteiro da gravação até ali. `microfoneDe(area, obj, chave, aoTerminar)`, em `base.js`, liga esse botão a uma caixa de texto.
+

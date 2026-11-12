@@ -349,14 +349,15 @@ function criarBlocoWhats() {
 
 const PASSOS = [
   { id: 'ia', rotulo: 'IA' },
-  { id: 'negocio', rotulo: 'Seu negócio' },
-  { id: 'assistente', rotulo: 'Seu assistente' },
+  { id: 'negocio', rotulo: 'Negócio' },
+  { id: 'agenda', rotulo: 'Horários' },
+  { id: 'assistente', rotulo: 'Assistente' },
   { id: 'avisos', rotulo: 'Avisos' },
   { id: 'whats', rotulo: 'WhatsApp' },
   { id: 'pronto', rotulo: 'Pronto' },
 ];
 const TONS_PADRAO = ['simpático e profissional', 'descontraído e próximo', 'formal e objetivo'];
-const CAMPOS_INICIO = ['negocio', 'segmento', 'cidade', 'horario', 'produtos'];
+const CAMPOS_INICIO = ['negocio', 'segmento', 'cidade', 'produtos'];
 
 let inicio = null; // peças da configuração inicial aberta
 
@@ -375,11 +376,20 @@ async function abrirInicio() {
   S.inicio.passo = S.estado && S.estado.ia && S.estado.ia.conectado ? 1 : 0;
   S.inicio.dados = {
     negocio: c.negocio || '', segmento: c.segmento || '', cidade: c.cidade || '',
-    horario: c.horario || '', produtos: c.produtos || '',
+    produtos: c.produtos || '',
     assistente: c.assistente || 'Ana',
     tom: c.tom || (S.tons[0] || TONS_PADRAO[0]),
     numero_humano: c.numero_humano || '',
     outros: {},
+  };
+  // Horários e agenda: os mesmos dados das Regras da agenda. Em uma instalação nova, a
+  // agenda nasce ligada: o assistente marca os horários sozinho.
+  const ag = c.agenda || {};
+  S.inicio.agenda = {
+    usa: c.salvo ? !!ag.ativa : true,
+    dias: semanaDe(ag.dias),
+    servicos: (ag.servicos || []).map((s) => ({ nome: s.nome || '', duracao_min: s.duracao_min || 30, preco: s.preco || '' })),
+    daIA: false,
   };
   const passos = h('ol', { class: 'passos', 'aria-label': 'Passos da configuração' });
   const corpo = h('div', { class: 'inicio-corpo' });
@@ -432,6 +442,9 @@ function pintarPasso() {
   let continuar = null;
   const extras = [];
 
+  const areaDescricao = areaTexto(S.inicio, 'descricao', {
+    rows: 3, placeholder: 'Ex.: Clínica de estética em Vitória. Limpeza de pele a R$ 120. Aberta de segunda a sexta, das 9h às 18h, com almoço do meio-dia à uma.',
+  });
   if (PASSOS[i].id === 'ia') {
     const lugar = h('div', { class: 'inicio-ia' });
     trocar(corpo,
@@ -454,10 +467,13 @@ function pintarPasso() {
       titulo('Conte sobre o seu negócio'),
       h('p', { class: 'descricao', text: 'Em poucos minutos o seu assistente está respondendo no WhatsApp. Comece dizendo o que você vende.' }),
       h('div', { class: 'caixa-ia' },
-        campo('Escreva do seu jeito', areaTexto(S.inicio, 'descricao', {
-          rows: 3, placeholder: 'Ex.: Barbearia em Vitória. Corte a R$ 40 e plano mensal de R$ 150. Aberta de segunda a sábado, das 9h às 19h.',
-        }), 'A IA lê o seu texto e preenche os campos abaixo. Depois você revisa. Se preferir, preencha direto.'),
+        campo('Escreva ou fale do seu jeito', areaDescricao,
+          'Conte o que você vende, os preços, os dias e horários e a pausa do almoço. A IA preenche os campos abaixo e os horários do próximo passo. Depois você revisa. Se preferir, preencha direto.'),
         h('div', { class: 'acoes' },
+          microfoneDe(areaDescricao, S.inicio, 'descricao', () => {
+            const preencher = [...corpo.querySelectorAll('.caixa-ia .btn')].find((b) => b.textContent.trim() === 'Preencher com IA');
+            if (preencher) preencher.click(); // falou, a IA já preenche
+          }),
           botao('Preencher com IA', {
             classe: 'btn-suave', icone: 'ia',
             aoClicar: async () => {
@@ -466,11 +482,22 @@ function pintarPasso() {
               let quantos = 0;
               for (const [k, v] of Object.entries(r.campos || {})) {
                 if (typeof v !== 'string' || !v.trim()) continue;
+                if (k === 'horario') continue; // os horários vão para o passo seguinte, já em dias e horas
                 if (CAMPOS_INICIO.includes(k)) d[k] = v.trim();
                 else d.outros[k] = v.trim();
                 quantos++;
               }
               if (!quantos) throw new Error('A IA não encontrou dados para preencher. Tente escrever com mais detalhes.');
+              // Horários, pausas e serviços que a IA entendeu já ficam prontos no próximo passo.
+              if (r.agenda) {
+                const destino = S.inicio.agenda;
+                if (Array.isArray(r.agenda.dias) && r.agenda.dias.length === 7) destino.dias = semanaDe(r.agenda.dias);
+                if (Array.isArray(r.agenda.servicos) && r.agenda.servicos.length) {
+                  destino.servicos = r.agenda.servicos.map((s) => ({ nome: s.nome || '', duracao_min: s.duracao_min || 30, preco: s.preco || '' }));
+                }
+                destino.usa = !!r.agenda.usa;
+                destino.daIA = true;
+              }
               toast('Campos preenchidos. Revise antes de continuar.');
               pintarPasso();
             },
@@ -478,9 +505,8 @@ function pintarPasso() {
           h('span', { class: 'espera-ia', text: 'Pode levar até um minuto.' }))),
       h('div', { class: 'grade-campos' },
         campo('Nome do negócio', entrada(d, 'negocio', { autocomplete: 'off' })),
-        campo('Segmento', entrada(d, 'segmento', { placeholder: 'Ex.: Barbearia', autocomplete: 'off' })),
+        campo('Segmento', entrada(d, 'segmento', { placeholder: 'Ex.: Clínica de estética', autocomplete: 'off' })),
         campo('Cidade', entrada(d, 'cidade', { placeholder: 'Ex.: São Mateus, ES', autocomplete: 'off' })),
-        campo('Horário de atendimento', entrada(d, 'horario', { placeholder: 'Ex.: segunda a sábado, das 9h às 19h', autocomplete: 'off' })),
         h('div', { class: 'largo' }, campo('Produtos, serviços e preços', areaTexto(d, 'produtos', { rows: 4 }),
           'O assistente só informa preço que estiver escrito. Você completa o resto depois, na aba Assistente.'))));
     continuar = botao('Continuar', {
@@ -490,6 +516,48 @@ function pintarPasso() {
         const envio = Object.assign({}, d.outros);
         for (const k of CAMPOS_INICIO) envio[k] = d[k].trim();
         await salvarConfig(envio);
+        avancar();
+      },
+    });
+  } else if (PASSOS[i].id === 'agenda') {
+    const g = S.inicio.agenda;
+    const servicos = h('fieldset', { class: 'grupo' },
+      h('legend', { text: 'Serviços que dá para agendar' }),
+      editorDeServicos(g.servicos));
+    const escolha = h('div', { class: 'segmentado inicio-escolha', role: 'group', 'aria-label': 'O negócio atende com hora marcada' });
+    const explica = h('p', { class: 'ajuda' });
+    const pintarEscolha = () => {
+      trocar(escolha, [[true, 'Sim, o assistente marca sozinho'], [false, 'Não']].map(([valor, rotulo]) => h('button', {
+        type: 'button', 'aria-pressed': g.usa === valor ? 'true' : 'false',
+        onclick: () => { g.usa = valor; pintarEscolha(); },
+      }, rotulo)));
+      servicos.hidden = !g.usa;
+      explica.textContent = g.usa
+        ? 'O assistente oferece os horários livres, marca, remarca e desmarca na conversa, sem chamar uma pessoa. Tudo aparece na aba Agenda.'
+        : 'O assistente só informa os dias e horários de funcionamento. Você pode ligar a agenda depois, na aba Agenda.';
+    };
+    pintarEscolha();
+    trocar(corpo,
+      titulo('Horários e agenda'),
+      h('p', { class: 'descricao', text: 'Diga quando o negócio abre e fecha, e a pausa do almoço se houver. O assistente informa esses horários aos clientes e o calendário já nasce com eles.' }),
+      g.daIA ? h('p', { class: 'nota' }, icone('ia'), h('span', { text: 'A IA preencheu com o que você contou. Confira e ajuste o que precisar.' })) : null,
+      h('fieldset', { class: 'grupo' },
+        h('legend', { text: 'Dias e horários' }),
+        editorDeDias(g.dias)),
+      h('fieldset', { class: 'grupo' },
+        h('legend', { text: 'Seu negócio atende com hora marcada?' }),
+        escolha, explica),
+      servicos);
+    continuar = botao('Continuar', {
+      classe: 'btn-primario',
+      aoClicar: async () => {
+        const problema = conferirSemana(g.dias);
+        if (problema) throw new Error(problema);
+        const lista = g.servicos
+          .map((s) => ({ nome: String(s.nome || '').trim(), duracao_min: Math.round(Number(s.duracao_min)) || 30, preco: String(s.preco || '').trim() }))
+          .filter((s) => s.nome);
+        // Salva como regras da agenda: o calendário e o horário que o assistente informa saem daqui.
+        await salvarConfig({ agenda: { ativa: g.usa, dias: g.dias, servicos: lista } });
         avancar();
       },
     });
@@ -543,6 +611,10 @@ function pintarPasso() {
       h('p', { class: 'descricao', text: 'Confira e ligue. Depois, mande um "Oi" de outro celular para o número do negócio e veja a conversa aparecer no painel.' }),
       h('dl', { class: 'resumo-inicio' },
         h('dt', { text: 'Negócio' }), h('dd', { text: [d.negocio, d.segmento, d.cidade].filter(Boolean).join(', ') }),
+        h('dt', { text: 'Horários' }), h('dd', { text: (S.config && S.config.horario) || 'Ainda não informados' }),
+        h('dt', { text: 'Agenda' }), h('dd', { text: S.inicio.agenda.usa
+          ? 'O assistente marca os horários sozinho' + (S.inicio.agenda.servicos.filter((s) => String(s.nome || '').trim()).length ? ', com ' + S.inicio.agenda.servicos.filter((s) => String(s.nome || '').trim()).length + ' serviços cadastrados' : '')
+          : 'Desligada: o assistente só informa os horários' }),
         h('dt', { text: 'Assistente' }), h('dd', { text: (d.assistente || 'Ana') + ', com tom ' + d.tom }),
         h('dt', { text: 'Avisos' }), h('dd', { text: d.numero_humano ? 'Vão para o número ' + d.numero_humano : 'Sem número de avisos por enquanto' }),
         h('dt', { text: 'WhatsApp' }), inicio.resumoWhats));

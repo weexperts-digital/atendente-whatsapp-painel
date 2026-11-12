@@ -75,14 +75,79 @@ func hhmm(m int) string {
 	return fmt.Sprintf("%02d:%02d", m/60, m%60)
 }
 
+// padrao devolve a semana de fabrica: segunda a sexta das 9h as 18h e sabado ate as 13h.
+func (c AgendaConfig) padrao() AgendaConfig {
+	c.Dias = make([]Expediente, 7)
+	for d := 0; d < 7; d++ {
+		c.Dias[d] = Expediente{Dia: d, Aberto: d >= 1 && d <= 5, Inicio: "09:00", Fim: "18:00"}
+	}
+	c.Dias[6] = Expediente{Dia: 6, Aberto: true, Inicio: "09:00", Fim: "13:00"}
+	return c
+}
+
+var nomesDosDias = []string{"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"}
+
+// horaFalada escreve a hora como as pessoas falam: 09:00 vira 9h, 13:30 vira 13h30.
+func horaFalada(s string) string {
+	m, ok := minutos(s)
+	if !ok {
+		return s
+	}
+	if m%60 == 0 {
+		return fmt.Sprintf("%dh", m/60)
+	}
+	return fmt.Sprintf("%dh%02d", m/60, m%60)
+}
+
+// horarioPorExtenso escreve o funcionamento da semana em uma frase, juntando os dias
+// seguidos que tem o mesmo horario. E o texto que o assistente usa para dizer quando o
+// negocio atende. Vazio se nenhum dia abre.
+func (c AgendaConfig) horarioPorExtenso() string {
+	if len(c.Dias) != 7 {
+		return ""
+	}
+	descrever := func(e Expediente) string {
+		if !e.Aberto {
+			return "fechado"
+		}
+		t := "das " + horaFalada(e.Inicio) + " às " + horaFalada(e.Fim)
+		if e.PausaInicio != "" && e.PausaFim != "" {
+			t += ", com pausa das " + horaFalada(e.PausaInicio) + " às " + horaFalada(e.PausaFim)
+		}
+		return t
+	}
+	ordem := []int{1, 2, 3, 4, 5, 6, 0} // a semana contada de segunda a domingo
+	var partes []string
+	algumAberto := false
+	for i := 0; i < len(ordem); {
+		texto := descrever(c.Dias[ordem[i]])
+		j := i
+		for j+1 < len(ordem) && descrever(c.Dias[ordem[j+1]]) == texto {
+			j++
+		}
+		if texto != "fechado" {
+			algumAberto = true
+		}
+		dias := nomesDosDias[ordem[i]]
+		switch {
+		case j == i+1:
+			dias += " e " + strings.ToLower(nomesDosDias[ordem[j]])
+		case j > i+1:
+			dias += " a " + strings.ToLower(nomesDosDias[ordem[j]])
+		}
+		partes = append(partes, dias+", "+texto)
+		i = j + 1
+	}
+	if !algumAberto {
+		return ""
+	}
+	return strings.Join(partes, ". ") + "."
+}
+
 func (c *AgendaConfig) normalizar() {
 	novo := len(c.Dias) != 7
 	if novo {
-		c.Dias = make([]Expediente, 7)
-		for d := 0; d < 7; d++ {
-			c.Dias[d] = Expediente{Dia: d, Aberto: d >= 1 && d <= 5, Inicio: "09:00", Fim: "18:00"}
-		}
-		c.Dias[6] = Expediente{Dia: 6, Aberto: true, Inicio: "09:00", Fim: "13:00"}
+		c.Dias = c.padrao().Dias
 		c.AvisarHumano = true
 		if c.AntecedenciaMin == 0 {
 			c.AntecedenciaMin = 60
@@ -368,6 +433,8 @@ type resultadoAgenda struct {
 	Transbordo bool         // nao achou saida: chama uma pessoa
 	Marcado    *Agendamento // avisar o numero humano
 	Cancelado  *Agendamento
+	Remarcado  *Agendamento // ja com o horario novo
+	Antes      time.Time    // o horario que o remarcado tinha
 }
 
 // aplicarAgendamento executa o pedido de agenda que veio do cerebro. Chame com a.mu travado.
@@ -375,11 +442,52 @@ func (a *App) aplicarAgendamento(l *Lead, pedido AgendamentoIA, nomeCliente stri
 	var r resultadoAgenda
 	cfg := a.cfg.Agenda
 	acao := strings.ToLower(strings.TrimSpace(pedido.Acao))
-	if !cfg.Ativa || (acao != "marcar" && acao != "cancelar") {
+	if !cfg.Ativa || (acao != "marcar" && acao != "cancelar" && acao != "remarcar") {
 		return r
 	}
 	futuros := a.futurosDoLead(l.ID, agora)
 	inicio, errData := interpretarDataHora(pedido.Data, pedido.Hora, agora)
+
+	// Remarcar sem nada marcado e so um pedido de marcar.
+	if acao == "remarcar" && len(futuros) > 0 {
+		if errData != nil {
+			r.Resposta = "Para eu trocar certinho, me diga de novo o novo dia e a nova hora?"
+			return r
+		}
+		alvo := futuros[0]
+		if nome, _ := cfg.servicoDe(pedido.Servico); strings.TrimSpace(pedido.Servico) != "" {
+			for _, ag := range futuros {
+				if chaveTexto(ag.Servico) == chaveTexto(nome) {
+					alvo = ag
+					break
+				}
+			}
+		}
+		if alvo.Inicio.Equal(inicio) {
+			return r // ja esta nesse horario
+		}
+		// O horario novo e conferido sem contar o proprio agendamento que vai sair do lugar.
+		outros := make([]*Agendamento, 0, len(a.agenda))
+		for _, ag := range a.agenda {
+			if ag != alvo {
+				outros = append(outros, ag)
+			}
+		}
+		if err := cfg.conferir(outros, inicio, alvo.DuracaoMin, agora, false); err != nil {
+			opcoes := cfg.sugestoes(outros, inicio, alvo.DuracaoMin, 4, agora)
+			if len(opcoes) == 0 {
+				r.Resposta = "Não encontrei outro horário livre nos próximos dias. O seu horário de " + dataPorExtenso(alvo.Inicio) + " continua marcado. Quer que eu chame uma pessoa da equipe para ver outra data?"
+				return r
+			}
+			r.Resposta = "Esse horário não está disponível. Tenho estes: " + strings.Join(opcoes, ", ") + ". Qual você prefere? O seu horário atual continua marcado até você escolher."
+			return r
+		}
+		r.Antes = alvo.Inicio
+		alvo.Inicio = inicio
+		a.salvarAgenda()
+		r.Remarcado = alvo
+		return r
+	}
 
 	if acao == "cancelar" {
 		var alvo *Agendamento
@@ -466,12 +574,24 @@ func (a *App) blocoAgenda(cfg Config, leadID string, agora time.Time) string {
 			b.WriteString("- " + f.Servico + " em " + dataPorExtenso(f.Inicio) + "\n")
 		}
 	}
-	b.WriteString(`Como marcar: descubra o serviço e o dia que a pessoa prefere, ofereça de 2 a 4 horários livres desse dia e espere a pessoa escolher. Só na mensagem em que ela confirmar o horário, preencha agendamento com acao "marcar", o serviço, a data no formato AAAA-MM-DD e a hora no formato HH:MM, e diga que ficou marcado. Nas outras mensagens use acao "nenhuma". Se a pessoa pedir para desmarcar, use acao "cancelar" com a data e a hora do agendamento. Para trocar de horário, primeiro cancele e depois marque o novo. Nunca confirme um horário que não esteja na lista.
-Querer marcar um horário NÃO é motivo para chamar uma pessoa, mesmo que o lead seja quente: marque você mesmo. Chame uma pessoa só pelos outros motivos das regras de transbordo.`)
+	b.WriteString(`Como marcar: descubra o serviço e o dia que a pessoa prefere, ofereça de 2 a 4 horários livres desse dia e espere a pessoa escolher. Só na mensagem em que ela confirmar o horário, preencha agendamento com acao "marcar", o serviço, a data no formato AAAA-MM-DD e a hora no formato HH:MM, e diga que ficou marcado. Nas outras mensagens use acao "nenhuma". Se a pessoa pedir para desmarcar, use acao "cancelar" com a data e a hora do agendamento. Se ela pedir para trocar de horário, ofereça os horários livres e, quando ela escolher, use acao "remarcar" com a data e a hora NOVAS: o horário antigo sai e o novo entra de uma vez. Nunca confirme um horário que não esteja na lista.
+Marcar, remarcar e desmarcar são tarefas SUAS. Querer um horário NÃO é motivo para chamar uma pessoa, mesmo que o lead seja quente, e nunca diga que um atendente vai confirmar o horário: confirme você mesmo, com os horários da lista. Chame uma pessoa só pelos outros motivos das regras de transbordo, ou quando as instruções do negócio disserem que aquele serviço é sob consulta ou depende de um especialista.`)
 	return b.String()
 }
 
 // avisoAgendamento e o texto que vai para o numero humano.
+// avisoRemarcacao e o texto que vai para o numero humano quando o assistente troca um horario.
+func avisoRemarcacao(ag *Agendamento, antes time.Time) string {
+	var b strings.Builder
+	b.WriteString("AGENDAMENTO REMARCADO: " + ouPadrao(ag.Nome, "sem nome") + "\n")
+	b.WriteString("Serviço: " + ouPadrao(ag.Servico, "não informado") + "\n")
+	b.WriteString("Era: " + dataPorExtenso(antes) + "\n")
+	b.WriteString("Ficou: " + dataPorExtenso(ag.Inicio) + "\n")
+	b.WriteString("Telefone: " + telefoneBonito(ag.Telefone) + "\n")
+	b.WriteString("Feito pelo assistente. Veja a agenda no painel.")
+	return b.String()
+}
+
 func avisoAgendamento(ag *Agendamento, cancelado bool) string {
 	titulo := "AGENDAMENTO"
 	if cancelado {

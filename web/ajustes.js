@@ -378,7 +378,7 @@
             'O tema claro costuma ficar melhor em projetor e em salas iluminadas.',
             h('div', { class: 'segmentado aj-tema', role: 'group', 'aria-label': 'Tema do painel' }, tela.temas)),
           bloco(icone('desfazer'), 'Configuração inicial',
-            'Passe de novo pelos passos do começo: IA, negócio, assistente, avisos, WhatsApp e ligar.',
+            'Passe de novo pelos passos do começo: IA, negócio, horários, assistente, avisos, WhatsApp e ligar.',
             h('div', { class: 'acoes' }, botao('Refazer a configuração inicial', {
               icone: 'desfazer',
               aoClicar: () => { if (typeof abrirInicio === 'function') return abrirInicio(); return undefined; },
