@@ -23,7 +23,7 @@ import (
 // O cerebro e o claude em modo headless, SEM ferramentas. Nenhuma mensagem de
 // WhatsApp consegue executar comandos, abrir arquivos ou acessar a internet.
 
-const esquemaSaida = `{"type":"object","properties":{"resposta":{"type":"string"},"transbordo":{"type":"boolean"},"motivo":{"type":"string"},"lead":{"type":"object","properties":{"nome":{"type":"string"},"necessidade":{"type":"string"},"orcamento":{"type":"string"},"decisor":{"type":"string"},"prazo":{"type":"string"},"pontuacao":{"type":"integer"},"classificacao":{"type":"string","enum":["quente","morno","frio","indefinido"]},"etapa":{"type":"string"},"resumo":{"type":"string"}},"required":["nome","necessidade","orcamento","decisor","prazo","pontuacao","classificacao","etapa","resumo"]},"agendamento":{"type":"object","properties":{"acao":{"type":"string","enum":["nenhuma","marcar","cancelar"]},"servico":{"type":"string"},"data":{"type":"string"},"hora":{"type":"string"}},"required":["acao","servico","data","hora"]}},"required":["resposta","transbordo","motivo","lead","agendamento"]}`
+const esquemaSaida = `{"type":"object","properties":{"resposta":{"type":"string"},"transbordo":{"type":"boolean"},"motivo":{"type":"string"},"lead":{"type":"object","properties":{"nome":{"type":"string"},"necessidade":{"type":"string"},"orcamento":{"type":"string"},"decisor":{"type":"string"},"prazo":{"type":"string"},"pontuacao":{"type":"integer"},"classificacao":{"type":"string","enum":["quente","morno","frio","indefinido"]},"etapa":{"type":"string"},"resumo":{"type":"string"},"etiquetas":{"type":"array","items":{"type":"string"}}},"required":["nome","necessidade","orcamento","decisor","prazo","pontuacao","classificacao","etapa","resumo","etiquetas"]},"agendamento":{"type":"object","properties":{"acao":{"type":"string","enum":["nenhuma","marcar","cancelar"]},"servico":{"type":"string"},"data":{"type":"string"},"hora":{"type":"string"}},"required":["acao","servico","data","hora"]}},"required":["resposta","transbordo","motivo","lead","agendamento"]}`
 
 const (
 	respostaFalha  = "Só um instante, por favor. Estou transferindo o seu atendimento para a nossa equipe, que continua com você por aqui."
@@ -62,6 +62,8 @@ type LeadIA struct {
 	Classificacao string  `json:"classificacao"`
 	Etapa         string  `json:"etapa"`
 	Resumo        string  `json:"resumo"`
+	// Etiquetas: na entrada, as que a conversa ja tem. Na saida, as que a IA sugere.
+	Etiquetas []string `json:"etiquetas"`
 }
 
 // AgendamentoIA e o pedido de agenda que o cerebro faz.
@@ -83,11 +85,15 @@ type Saida struct {
 
 // Cerebro lembra das falhas para decidir quando usar a reserva.
 type Cerebro struct {
-	mu          sync.Mutex
-	falhas      int
-	ultimaFalha time.Time
-	promptTexto bool // usar --system-prompt em vez de --system-prompt-file
-	ultimoErro  string
+	mu           sync.Mutex
+	falhas       int
+	ultimaFalha  time.Time
+	promptTexto  bool // usar --system-prompt em vez de --system-prompt-file
+	ultimoErro   string
+	ultimoAcerto time.Time
+	// Com chaveOpenAI preenchida, quem responde e o ChatGPT. Quem preenche e o App.
+	chaveOpenAI  string
+	modeloOpenAI string
 }
 
 // acharClaude encontra o programa claude mesmo quando o app roda em segundo plano.
@@ -149,6 +155,117 @@ func ambienteFiltrado() []string {
 	return saida
 }
 
+// avisoSemLogin e o que a pessoa le quando o claude deste computador perdeu o login.
+const avisoSemLogin = "A IA está desconectada. O login do Claude neste computador expirou. " +
+	"Use o botão Conectar a IA, no aviso vermelho do topo do painel ou em Ajustes, para entrar de novo."
+
+// motivoDaFalha reconhece as falhas que a pessoa consegue resolver sozinha. Devolve um
+// codigo curto (para a pagina escolher o aviso) e a frase pronta. Vazio quando nao reconhece.
+func motivoDaFalha(falha string) (codigo, aviso string) {
+	f := strings.ToLower(falha)
+	if strings.HasPrefix(f, prefixoOpenAI) {
+		switch {
+		case strings.Contains(f, "invalid_api_key"):
+			return "openai_chave", "A OpenAI não aceitou a chave guardada. Abra Conectar a IA e cole uma chave nova."
+		case strings.Contains(f, "insufficient_quota") || strings.Contains(f, "billing"):
+			return "openai_credito", "A conta da OpenAI está sem crédito. Coloque crédito no site da OpenAI ou volte a usar o Claude, em Conectar a IA."
+		case strings.Contains(f, "model_not_found") || strings.Contains(f, "does not exist") || strings.Contains(f, "do not have access") ||
+			strings.Contains(f, "v1/responses") || strings.Contains(f, "not a chat model") || strings.Contains(f, "not supported in the v1/chat/completions"):
+			return "openai_modelo", "O modelo escolhido não existe nesta conta da OpenAI ou não serve para conversa. Escolha outro modelo em Conectar a IA."
+		}
+		return "", ""
+	}
+	for _, sinal := range []string{
+		"failed to authenticate", "oauth", "not logged in", "/login",
+		"authentication_error", "invalid api key", "invalid bearer token",
+	} {
+		if strings.Contains(f, sinal) {
+			return "claude_login", avisoSemLogin
+		}
+	}
+	return "", ""
+}
+
+// avisoDoCerebro devolve so a frase de motivoDaFalha.
+func avisoDoCerebro(falha string) string {
+	_, aviso := motivoDaFalha(falha)
+	return aviso
+}
+
+// definirOpenAI liga (com chave) ou desliga (chave vazia) o ChatGPT como cerebro.
+func (c *Cerebro) definirOpenAI(chave, modelo string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.chaveOpenAI, c.modeloOpenAI = chave, modelo
+}
+
+func (c *Cerebro) viaOpenAI() (chave, modelo string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.chaveOpenAI, c.modeloOpenAI
+}
+
+// esquecerFalha limpa a ultima falha: quem responde mudou, o aviso antigo nao vale mais.
+func (c *Cerebro) esquecerFalha() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.falhas = 0
+	c.ultimoErro = ""
+}
+
+// pedirOpenAI manda o pedido para o ChatGPT. Falha passageira ganha uma segunda
+// tentativa nas respostas aos clientes. Falha de chave, credito ou modelo nao.
+func (c *Cerebro) pedirOpenAI(chave, modelo, sistema, entrada, esquema string, limite time.Duration, principal bool) (json.RawMessage, string, error) {
+	tentativas := 1
+	if principal {
+		tentativas = 2
+	}
+	var err error
+	for i := 0; i < tentativas; i++ {
+		var bruto json.RawMessage
+		bruto, err = chamarOpenAI(chave, modelo, sistema, entrada, esquema, limite)
+		c.mu.Lock()
+		if err == nil {
+			c.ultimoAcerto = time.Now()
+			c.falhas = 0
+			c.ultimoErro = ""
+			c.mu.Unlock()
+			return bruto, "openai", nil
+		}
+		conhecida := avisoDoCerebro(err.Error()) != ""
+		if principal {
+			c.falhas++
+			c.ultimaFalha = time.Now()
+		}
+		if principal || conhecida {
+			c.ultimoErro = cortar(err.Error(), 300)
+		}
+		c.mu.Unlock()
+		log.Printf("CEREBRO: a OpenAI falhou (tentativa %d): %v", i+1, err)
+		if conhecida {
+			break
+		}
+	}
+	return nil, "openai", err
+}
+
+// ultimos devolve a ultima falha guardada e a hora da ultima resposta boa do claude.
+func (c *Cerebro) ultimos() (falha string, acerto time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ultimoErro, c.ultimoAcerto
+}
+
+// esquecerFalhaDeLogin limpa o aviso de login expirado depois que a pessoa entra de novo.
+func (c *Cerebro) esquecerFalhaDeLogin() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if avisoDoCerebro(c.ultimoErro) != "" {
+		c.falhas = 0
+		c.ultimoErro = ""
+	}
+}
+
 func (c *Cerebro) emReserva(temChave bool) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -157,6 +274,11 @@ func (c *Cerebro) emReserva(temChave bool) bool {
 
 // Modo diz, para a pagina, qual cerebro esta em uso agora.
 func (c *Cerebro) Modo() (modo, erro string) {
+	if chave, _ := c.viaOpenAI(); chave != "" {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return "openai", c.ultimoErro
+	}
 	bin := acharClaude()
 	temChave := os.Getenv("ANTHROPIC_API_KEY") != ""
 	c.mu.Lock()
@@ -182,6 +304,10 @@ func (c *Cerebro) Modo() (modo, erro string) {
 // falhas que decidem a reserva. Os pedidos de ajuda (rascunhos, resumos) tentam uma
 // vez so e nao mexem nessa conta.
 func (c *Cerebro) pedir(modelo, sistema, entrada, esquema string, limite time.Duration, principal bool) (json.RawMessage, string, error) {
+	// Com o ChatGPT escolhido, o modelo do Claude que veio no pedido nao vale.
+	if chave, modeloOpenAI := c.viaOpenAI(); chave != "" {
+		return c.pedirOpenAI(chave, modeloOpenAI, sistema, entrada, esquema, limite, principal)
+	}
 	bin := acharClaude()
 	chave := os.Getenv("ANTHROPIC_API_KEY")
 	if bin == "" && chave == "" {
@@ -199,23 +325,32 @@ func (c *Cerebro) pedir(modelo, sistema, entrada, esquema string, limite time.Du
 		for i := 0; i < tentativas; i++ {
 			bruto, err := c.chamarClaude(bin, modelo, sistema, entrada, esquema, limite)
 			if err == nil {
-				if principal {
-					c.mu.Lock()
+				c.mu.Lock()
+				c.ultimoAcerto = time.Now()
+				// Uma resposta boa de qualquer pedido prova que o login voltou.
+				if principal || avisoDoCerebro(c.ultimoErro) != "" {
 					c.falhas = 0
 					c.ultimoErro = ""
-					c.mu.Unlock()
 				}
+				c.mu.Unlock()
 				return bruto, "claude", nil
 			}
 			erroClaude = err
+			semLogin := avisoDoCerebro(err.Error()) != ""
+			c.mu.Lock()
 			if principal {
-				c.mu.Lock()
 				c.falhas++
 				c.ultimaFalha = time.Now()
-				c.ultimoErro = cortar(err.Error(), 300)
-				c.mu.Unlock()
 			}
+			// Login expirado derruba tudo, entao o aviso aparece mesmo vindo de um pedido de ajuda.
+			if principal || semLogin {
+				c.ultimoErro = cortar(err.Error(), 300)
+			}
+			c.mu.Unlock()
 			log.Printf("CEREBRO: o claude falhou (tentativa %d): %v", i+1, err)
+			if semLogin {
+				break // tentar de novo sem login so faz a pessoa esperar mais
+			}
 		}
 	}
 
@@ -243,7 +378,7 @@ func (c *Cerebro) pedir(modelo, sistema, entrada, esquema string, limite time.Du
 
 // Responder passa a conversa pelo cerebro e devolve a resposta, o modo usado e o erro.
 func (c *Cerebro) Responder(modelo, sistema, entrada, textoNovo string) (Saida, string, error) {
-	if acharClaude() == "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
+	if chave, _ := c.viaOpenAI(); chave == "" && acharClaude() == "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		return modoTeste(textoNovo), "teste", nil
 	}
 	bruto, modo, err := c.pedir(modelo, sistema, entrada, esquemaSaida, limiteResposta, true)
@@ -513,31 +648,63 @@ func modoTeste(texto string) Saida {
 
 func leadParaIA(l *Lead) LeadIA {
 	if l == nil {
-		return LeadIA{Classificacao: "indefinido"}
+		return LeadIA{Classificacao: "indefinido", Etiquetas: []string{}}
 	}
 	return LeadIA{
 		Nome: l.Nome, Necessidade: l.Necessidade, Orcamento: l.Orcamento,
 		Decisor: l.Decisor, Prazo: l.Prazo, Pontuacao: numFlex(l.Pontuacao),
 		Classificacao: ouPadrao(l.Classificacao, "indefinido"), Etapa: l.Etapa, Resumo: l.Resumo,
+		Etiquetas: append([]string{}, l.Etiquetas...),
 	}
 }
 
-// montarEntrada cria o texto que vai pelo stdin: ultimas 12 mensagens, a nova no fim
-// e a linha "Lead ate agora" com o que ja sabemos.
-func montarEntrada(anteriores []Msg, novas []string, l *Lead) string {
-	// As linhas de historico interno (quem assumiu, quem devolveu) nao vao para a IA.
-	conversa := make([]Msg, 0, len(anteriores))
+const (
+	janelaIA       = 30  // mensagens que a IA le em uma conversa normal
+	janelaIAEquipe = 60  // quando a equipe atendeu, a IA le o atendimento inteiro
+	maxLinhaIA     = 700 // tamanho maximo de cada mensagem dentro da conversa da IA
+)
+
+// marcasDaEquipe sao as linhas que mostram a IA onde a conversa trocou de maos. O texto
+// e fixo: o nome de quem atendeu fica so no painel e nunca vai para a IA.
+var marcasDaEquipe = map[string]string{
+	"transbordo": "[O assistente passou a conversa para a equipe]",
+	"assumiu":    "[A equipe assumiu a conversa]",
+	"devolveu":   "[A equipe devolveu a conversa para o assistente]",
+}
+
+// montarEntrada cria o texto que vai pelo stdin: as ultimas mensagens (com tudo o que a
+// equipe conversou, quando houve atendimento humano), a nova no fim, a linha "Lead ate
+// agora" com o que ja sabemos e as etiquetas ja usadas no painel.
+func montarEntrada(anteriores []Msg, novas []string, l *Lead, etiquetasEmUso []string) string {
+	// Conta as mensagens de tras para frente ate encher a janela. As marcas de troca de
+	// maos entram junto, sem contar. As outras linhas internas nao vao para a IA.
+	equipe := false
 	for _, m := range anteriores {
-		if m.De != "sistema" {
-			conversa = append(conversa, m)
+		if m.De == "humano" {
+			equipe = true
+			break
 		}
 	}
-	anteriores = conversa
-	if len(anteriores) > 12 {
-		anteriores = anteriores[len(anteriores)-12:]
+	janela := janelaIA
+	if equipe {
+		janela = janelaIAEquipe
 	}
+	inicio, contadas := len(anteriores), 0
+	for i := len(anteriores) - 1; i >= 0 && contadas < janela; i-- {
+		if anteriores[i].De != "sistema" {
+			contadas++
+		}
+		inicio = i
+	}
+
 	var b strings.Builder
-	for _, m := range anteriores {
+	for _, m := range anteriores[inicio:] {
+		if m.De == "sistema" {
+			if marca := marcasDaEquipe[m.Evento]; marca != "" {
+				b.WriteString(marca + "\n")
+			}
+			continue
+		}
 		quem := "Cliente"
 		switch m.De {
 		case "atendente":
@@ -545,7 +712,7 @@ func montarEntrada(anteriores []Msg, novas []string, l *Lead) string {
 		case "humano":
 			quem = "Equipe"
 		}
-		b.WriteString(quem + ": " + umaLinha(m.textoPlano()) + "\n")
+		b.WriteString(quem + ": " + cortar(umaLinha(m.textoPlano()), maxLinhaIA) + "\n")
 	}
 	limpas := make([]string, 0, len(novas))
 	for _, n := range novas {
@@ -557,8 +724,17 @@ func montarEntrada(anteriores []Msg, novas []string, l *Lead) string {
 
 	j, _ := json.Marshal(leadParaIA(l))
 	b.WriteString("Lead até agora: " + string(j) + "\n")
+	if len(etiquetasEmUso) > 0 {
+		if len(etiquetasEmUso) > 40 {
+			etiquetasEmUso = etiquetasEmUso[:40]
+		}
+		b.WriteString("Etiquetas já usadas no painel: " + umaLinha(strings.Join(etiquetasEmUso, ", ")) + "\n")
+	}
 	if l != nil && l.Retomado {
-		b.WriteString("Observação: uma pessoa da equipe já atendeu este cliente e devolveu a conversa para você. Não chame uma pessoa de novo só porque o lead é quente. Chame apenas se o cliente pedir ou se houver outro motivo das regras.\n")
+		b.WriteString("Observação: uma pessoa da equipe já atendeu este cliente e devolveu a conversa para você. " +
+			"As linhas \"Equipe:\" acima mostram o que foi conversado. O que a equipe combinou com o cliente continua valendo: " +
+			"continue de onde a equipe parou, sem repetir perguntas já respondidas e sem contradizer a equipe. " +
+			"Não chame uma pessoa de novo só porque o lead é quente. Chame apenas se o cliente pedir ou se houver outro motivo das regras.\n")
 	}
 	return b.String()
 }

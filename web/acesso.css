@@ -1,0 +1,212 @@
+/* Entrada no painel (login), conta no menu lateral e equipe em Ajustes. */
+
+input[type="email"], input[type="password"] {
+  width: 100%; min-height: 44px; padding: 10px 12px;
+  background: var(--campo); color: var(--texto);
+  border: 1px solid var(--linha-forte); border-radius: var(--raio-campo);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+/* Enquanto ninguém entra, o painel fica fora da tela. */
+.app[hidden] { display: none; }
+
+/* ---------- Tela de entrada ---------- */
+
+.ac {
+  --ac-vitrine: #251A66;
+  --ac-vitrine-texto: #FFFFFF;
+  --ac-bolha-cliente: #FFFFFF;
+  --ac-bolha-ia: #DCD3FF;
+  --ac-bolha-texto: #191530;
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+  background: var(--sup);
+  overflow-y: auto;
+}
+:root[data-theme="dark"] .ac { --ac-vitrine: #1B1447; }
+
+.ac-caixa {
+  display: flex; flex-direction: column;
+  min-height: 100dvh; padding: 28px clamp(20px, 6vw, 80px);
+}
+.ac-caixa > * { width: 100%; max-width: 420px; margin-left: auto; margin-right: auto; }
+.ac-caixa .marca { padding: 0; }
+.ac-caixa .marca-nome { display: inline; }
+.ac-miolo { margin-top: auto; margin-bottom: auto; padding: 36px 0; }
+.ac-miolo h1 { font-size: 28px; line-height: 1.2; letter-spacing: -.02em; }
+.ac-miolo h1:focus { outline: none; }
+.ac-miolo > .descricao { margin-top: 10px; font-size: 15px; line-height: 1.55; max-width: none; }
+
+.ac-form { display: flex; flex-direction: column; gap: 18px; margin-top: 28px; }
+.ac-entrada { position: relative; display: flex; flex-wrap: wrap; gap: 8px; }
+.ac-entrada > input { flex: 1 1 200px; min-height: 48px; font-size: 16px; }
+.ac-entrada > input[aria-invalid="true"] { border-color: var(--perigo); }
+.ac-entrada:has(.ac-olho) > input { padding-right: 48px; }
+.ac-olho {
+  position: absolute; right: 2px; top: 2px;
+  width: 44px; height: 44px; padding: 0;
+  display: grid; place-items: center;
+  background: transparent; color: var(--suave);
+  border: 0; border-radius: var(--raio-campo); cursor: pointer;
+}
+.ac-olho:hover { color: var(--texto); }
+.ac-olho .ic { width: 20px; height: 20px; }
+
+.ac-erro { color: var(--perigo); font-size: 13px; font-weight: 600; }
+.ac-aviso {
+  padding: 10px 12px;
+  color: var(--perigo); font-weight: 600; font-size: 14px;
+  background: color-mix(in srgb, var(--perigo) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--perigo) 40%, transparent);
+  border-radius: var(--raio-campo);
+}
+.ac-enviar { width: 100%; margin-top: 4px; }
+.ac-nota { color: var(--suave); font-size: 13px; line-height: 1.5; }
+
+.ac-forca { display: flex; align-items: center; gap: 10px; min-height: 18px; }
+.ac-forca-barras { display: flex; gap: 4px; flex: 0 0 132px; }
+.ac-forca-barras i { flex: 1; height: 4px; border-radius: 2px; background: var(--linha); transition: background-color .15s ease; }
+.ac-forca-texto { font-size: 12px; font-weight: 600; color: var(--suave); }
+.ac-forca[data-nivel="1"] i:nth-child(-n+1) { background: var(--perigo); }
+.ac-forca[data-nivel="2"] i:nth-child(-n+2) { background: var(--morno); }
+.ac-forca[data-nivel="3"] i:nth-child(-n+3) { background: var(--azul); }
+.ac-forca[data-nivel="4"] i { background: var(--verde); }
+
+.ac-depois { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.ac-link {
+  min-height: 40px; padding: 0;
+  background: none; border: 0; cursor: pointer;
+  color: var(--roxo-texto); font: inherit; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.ac-link:hover { color: var(--texto); }
+.ac-ajuda {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px;
+  background: var(--sup2); border-radius: var(--raio);
+  font-size: 14px; line-height: 1.55;
+}
+.ac-ajuda[hidden] { display: none; }
+
+.ac-pe { display: flex; align-items: flex-start; gap: 8px; color: var(--suave); font-size: 12px; line-height: 1.5; }
+.ac-pe .ic { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+
+/* Lado direito: uma conversa de exemplo, que é o assunto do painel. */
+.ac-vitrine {
+  display: flex; flex-direction: column; justify-content: center; gap: 44px;
+  padding: 48px clamp(28px, 5vw, 72px);
+  background: var(--ac-vitrine); color: var(--ac-vitrine-texto);
+}
+.ac-conversa { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
+.ac-bolha {
+  max-width: 82%; padding: 10px 14px;
+  color: var(--ac-bolha-texto); font-size: 15px; line-height: 1.45;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(10, 6, 40, .25);
+}
+.ac-bolha-cliente { align-self: flex-start; background: var(--ac-bolha-cliente); border-bottom-left-radius: 4px; }
+.ac-bolha-ia { align-self: flex-end; background: var(--ac-bolha-ia); border-bottom-right-radius: 4px; }
+.ac-passagem {
+  align-self: center; display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 8px; padding: 7px 14px;
+  font-size: 13px; font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, .38); border-radius: 999px;
+}
+.ac-passagem .ic { width: 16px; height: 16px; }
+.ac-frase { max-width: 22ch; font-size: clamp(22px, 2.2vw, 30px); line-height: 1.25; font-weight: 650; letter-spacing: -.015em; }
+
+@media (max-width: 900px) {
+  .ac { grid-template-columns: minmax(0, 1fr); }
+  .ac-vitrine { display: none; }
+  .ac-miolo { padding: 28px 0; }
+}
+
+/* Janela de trocar senha e de criar conta. */
+.ac-janela .ac-form { margin-top: 0; }
+.ac-janela .ac-enviar { width: auto; align-self: flex-start; min-height: 44px; font-size: 14px; }
+
+/* ---------- Conta no menu lateral ---------- */
+
+.conta { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid var(--linha); }
+.conta[hidden] { display: none; }
+.conta-quem { display: flex; align-items: center; gap: 10px; padding: 0 8px 4px; min-width: 0; }
+.conta-avatar {
+  width: 34px; height: 34px; flex: none;
+  display: grid; place-items: center;
+  background: var(--sup2); color: var(--roxo-texto);
+  border-radius: 50%; font-size: 12px; font-weight: 700; letter-spacing: .02em;
+}
+.conta-textos { display: flex; flex-direction: column; min-width: 0; }
+.conta-nome { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conta-papel { color: var(--suave); font-size: 12px; }
+.conta-acoes { display: flex; flex-direction: column; }
+.conta-acoes .btn { justify-content: flex-start; }
+.lateral-pe > .btn { justify-content: flex-start; }
+
+@media (max-width: 900px) {
+  .conta { flex-direction: row; align-items: center; gap: 0; padding: 0; border: 0; }
+  .conta-quem { padding: 0 4px; }
+  .conta-textos { display: none; }
+  .conta-acoes { flex-direction: row; }
+}
+
+/* Abas e controles que o tipo de acesso não alcança. */
+[data-so-admin][hidden], .nav a[hidden] { display: none; }
+
+/* ---------- Equipe e registro, em Ajustes ---------- */
+
+.aj-acessos { margin-top: 16px; }
+.eq-bloco .aj-topo { flex-wrap: wrap; }
+.eq-acao-topo { margin-left: auto; }
+
+.eq-lista { display: flex; flex-direction: column; }
+.eq-linha {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(170px, 220px) auto;
+  align-items: center; gap: 10px 16px;
+  padding: 14px 0; border-top: 1px solid var(--linha);
+}
+.eq-linha:first-child { border-top: 0; padding-top: 0; }
+.eq-inativa .eq-quem, .eq-inativa .conta-avatar { opacity: .6; }
+.eq-nome { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-weight: 600; }
+.eq-email, .eq-ultimo { color: var(--suave); font-size: 13px; overflow-wrap: anywhere; }
+.eq-ultimo { font-size: 12px; }
+.eq-papel { font-weight: 600; }
+.eq-selo {
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--sup2); color: var(--roxo-texto);
+  font-size: 12px; font-weight: 600;
+}
+.eq-selo-off { background: color-mix(in srgb, var(--perigo) 12%, transparent); color: var(--perigo); }
+.eq-selo-espera { background: color-mix(in srgb, var(--morno) 14%, transparent); color: var(--morno); }
+.eq-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; }
+.eq-remover:hover:not(:disabled) { color: var(--perigo); }
+
+.eq-senha { font-family: var(--mono); letter-spacing: .04em; }
+.eq-pronto { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.eq-pronto .ic { color: var(--ok); }
+.eq-criada { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; padding: 14px 16px; background: var(--sup2); border-radius: var(--raio); }
+.eq-criada dt { color: var(--suave); }
+.eq-criada dd { font-weight: 600; overflow-wrap: anywhere; }
+.eq-criada code { font-family: var(--mono); font-size: 15px; letter-spacing: .04em; }
+.ac-janela .janela-corpo { display: flex; flex-direction: column; gap: 16px; }
+
+.eq-registro { max-height: 440px; overflow: auto; }
+.eq-tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
+.eq-tabela th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 0 16px 8px 0; text-align: left;
+  background: var(--sup); color: var(--suave); font-weight: 600; white-space: nowrap;
+}
+.eq-tabela td { padding: 9px 16px 9px 0; border-top: 1px solid var(--linha); vertical-align: top; }
+.eq-quando { white-space: nowrap; color: var(--suave); }
+.eq-detalhe { color: var(--suave); overflow-wrap: anywhere; }
+.eq-alerta td:nth-child(3) { color: var(--perigo); font-weight: 600; }
+
+@media (max-width: 760px) {
+  .eq-linha { grid-template-columns: auto minmax(0, 1fr); }
+  .eq-acesso, .eq-acoes { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* Quem não é administrador vê se o atendente está ligado, mas não mexe na chave. */
+.chave-principal[aria-disabled="true"] { cursor: default; }
+.chave-principal[aria-disabled="true"] .chave-trilho { opacity: .7; }

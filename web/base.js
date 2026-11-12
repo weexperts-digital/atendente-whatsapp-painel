@@ -73,6 +73,12 @@ async function pedir(url, opcoes) {
   }
   let dados = null;
   try { dados = await resp.json(); } catch (e) { /* resposta sem JSON */ }
+  // Sessão caída ou senha provisória: a tela de entrada assume.
+  if ((resp.status === 401 || resp.status === 403) && dados && (dados.entrar || dados.precisa_criar || dados.trocar_senha) && typeof ACESSO !== 'undefined') {
+    ACESSO.caiu();
+  }
+  // IA sem login: além do aviso, já abre a janela que resolve.
+  if (dados && dados.conectar_ia && typeof CONEXAO !== 'undefined') CONEXAO.abrir();
   if (!resp.ok || (dados && dados.ok === false)) {
     throw new Error((dados && dados.erro) || 'Algo deu errado (código ' + resp.status + '). Tente de novo.');
   }
@@ -413,14 +419,23 @@ function areaTexto(obj, chave, attrs, aoMudar) {
   return el;
 }
 
-// seletor cria um <select>. opcoes: [{ valor, texto }].
+// seletor cria uma lista de escolha ligada a obj[chave]. opcoes: [{ valor, texto }].
+// Usa a lista suspensa do painel (suspenso.js). Se ela não carregou, cai no <select> do navegador.
 function seletor(obj, chave, opcoes, aoMudar, numero) {
-  const el = h('select', null, opcoes.map((o) => h('option', { value: String(o.valor), text: o.texto })));
-  el.value = String(obj[chave] == null ? '' : obj[chave]);
-  el.addEventListener('change', () => {
-    obj[chave] = numero ? Number(el.value) : el.value;
+  const atual = String(obj[chave] == null ? '' : obj[chave]);
+  const guardar = (valor) => {
+    obj[chave] = numero ? Number(valor) : String(valor);
     if (aoMudar) aoMudar();
-  });
+  };
+  if (typeof listaSuspensa === 'function') {
+    return listaSuspensa({
+      opcoes: opcoes.map((o) => ({ valor: String(o.valor), texto: o.texto })),
+      valor: atual, aoMudar: guardar,
+    });
+  }
+  const el = h('select', null, opcoes.map((o) => h('option', { value: String(o.valor), text: o.texto })));
+  el.value = atual;
+  el.addEventListener('change', () => guardar(el.value));
   return el;
 }
 
@@ -585,6 +600,9 @@ const S = {
 
   inicio: { passo: 0, dados: null, descricao: '', dispensado: false },
 };
+
+// SESSAO guarda quem entrou no painel. Fica vazio até a pessoa entrar.
+const SESSAO = { usuario: null }; // { id, nome, email, papel }
 
 // TELAS guarda cada aba: { montar(main, sub), atualizar(batidas), sair() }.
 const TELAS = {};

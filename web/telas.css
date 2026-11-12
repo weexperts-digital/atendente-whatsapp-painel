@@ -63,6 +63,7 @@
 .tr-entendeu { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 .tr-entendeu .etiqueta { white-space: normal; text-align: left; }
 .tr-etiqueta-agenda { color: var(--texto); background: var(--sup); border: 1px solid var(--linha); padding: 1px 8px; }
+.tr-etiqueta-ia { color: var(--roxo-texto); background: var(--sup2); padding: 1px 8px; }
 .tr-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-left: -8px; }
 .tr-acoes .etiqueta { margin-left: 8px; }
 .tr-link {

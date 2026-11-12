@@ -385,6 +385,108 @@ func limparEtiquetas(lista []string) []string {
 	return saida
 }
 
+const (
+	maxEtiquetasIA     = 6  // quantas etiquetas criadas pela IA uma conversa guarda
+	maxEtiquetasPorVez = 3  // quantas a IA pode sugerir em cada resposta
+	maxEtiquetasFora   = 40 // quantas etiquetas tiradas por uma pessoa a conversa lembra
+)
+
+// etiquetasProibidas nao viram etiqueta da IA: a temperatura e a situacao ja tem lugar proprio.
+var etiquetasProibidas = map[string]bool{
+	"quente": true, "morno": true, "frio": true, "indefinido": true, "lead": true, "cliente": true,
+	"lead quente": true, "lead morno": true, "lead frio": true, "na fila": true, "em atendimento": true,
+	"qualificado": true, "qualificando": true, "aguardando humano": true, "whatsapp": true,
+}
+
+// etiquetaDaIALimpa arruma a sugestao da IA e recusa o que nao serve: temperatura,
+// frases longas e qualquer coisa com cara de dado pessoal (telefone, documento, e-mail).
+func etiquetaDaIALimpa(s string) string {
+	e := strings.ToLower(strings.Trim(umaLinha(s), " .,;:!?#\"'"))
+	if e == "" || len([]rune(e)) > 30 || len(strings.Fields(e)) > 4 || strings.ContainsAny(e, "@/\\{}<>") {
+		return ""
+	}
+	if etiquetasProibidas[e] || len(soDigitos(e)) >= 5 {
+		return ""
+	}
+	return e
+}
+
+func temEtiqueta(lista []string, e string) bool {
+	chave := chaveTexto(e)
+	for _, x := range lista {
+		if chaveTexto(x) == chave {
+			return true
+		}
+	}
+	return false
+}
+
+func semEtiqueta(lista []string, e string) []string {
+	chave := chaveTexto(e)
+	saida := lista[:0:0]
+	for _, x := range lista {
+		if chaveTexto(x) != chave {
+			saida = append(saida, x)
+		}
+	}
+	return saida
+}
+
+// etiquetasDaIA junta a conversa as etiquetas que a IA sugeriu. A IA so acrescenta:
+// nunca tira etiqueta posta por uma pessoa e nao repoe a que uma pessoa tirou. Se ja
+// existe uma etiqueta igual em outra conversa, usa a mesma grafia. Quando passa do
+// limite, sai a etiqueta mais antiga criada pela propria IA.
+func (l *Lead) etiquetasDaIA(sugeridas, emUso []string) {
+	if len(sugeridas) > maxEtiquetasPorVez {
+		sugeridas = sugeridas[:maxEtiquetasPorVez]
+	}
+	for _, s := range sugeridas {
+		e := etiquetaDaIALimpa(s)
+		if e == "" || temEtiqueta(l.Etiquetas, e) || temEtiqueta(l.EtiquetasFora, e) {
+			continue
+		}
+		for _, existente := range emUso {
+			if chaveTexto(existente) == chaveTexto(e) {
+				e = existente
+				break
+			}
+		}
+		for len(l.EtiquetasIA) >= maxEtiquetasIA || len(l.Etiquetas) >= 12 {
+			if len(l.EtiquetasIA) == 0 {
+				return // a conversa esta cheia de etiquetas postas por pessoas
+			}
+			velha := l.EtiquetasIA[0]
+			l.EtiquetasIA = l.EtiquetasIA[1:]
+			l.Etiquetas = semEtiqueta(l.Etiquetas, velha)
+		}
+		l.Etiquetas = append(l.Etiquetas, e)
+		l.EtiquetasIA = append(l.EtiquetasIA, e)
+	}
+}
+
+// etiquetasEditadas roda quando uma pessoa muda as etiquetas pelo painel: o que ela
+// tirou a IA nao repoe, e o que ela pos de volta deixa de estar vetado.
+func (l *Lead) etiquetasEditadas(antes []string) {
+	for _, e := range antes {
+		if !temEtiqueta(l.Etiquetas, e) && !temEtiqueta(l.EtiquetasFora, e) {
+			l.EtiquetasFora = append(l.EtiquetasFora, e)
+		}
+	}
+	for _, e := range l.Etiquetas {
+		l.EtiquetasFora = semEtiqueta(l.EtiquetasFora, e)
+	}
+	if len(l.EtiquetasFora) > maxEtiquetasFora {
+		l.EtiquetasFora = l.EtiquetasFora[len(l.EtiquetasFora)-maxEtiquetasFora:]
+	}
+	daIA := l.EtiquetasIA[:0:0]
+	for _, e := range l.EtiquetasIA {
+		if temEtiqueta(l.Etiquetas, e) {
+			daIA = append(daIA, e)
+		}
+	}
+	l.EtiquetasIA = daIA
+}
+
 // etiquetasEmUso lista todas as etiquetas das conversas. Chame com a.mu travado.
 func (a *App) etiquetasEmUso() []string {
 	vistas := map[string]bool{}

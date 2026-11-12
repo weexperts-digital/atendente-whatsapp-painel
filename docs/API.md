@@ -26,6 +26,7 @@ Regras gerais:
   "salvo": true,
   "modo": "claude | api | teste",
   "erro_cerebro": "",
+  "aviso_cerebro": "",
   "modelo": "claude-haiku-5-5",
   "agenda_ativa": true,
   "contadores": {
@@ -56,7 +57,7 @@ Regras gerais:
 }
 ```
 
-`leads` vem do mais recente para o mais antigo. `proximo_agendamento` pode ser `null`. `tem_qr` verdadeiro quer dizer que `GET /qr.png` devolve a imagem do código (trocar a cada 2 segundos com `?r=` aleatório).
+`leads` vem do mais recente para o mais antigo. `proximo_agendamento` pode ser `null`. `erro_cerebro` é o texto técnico da última falha da IA. `aviso_cerebro` vem preenchido quando o programa reconhece a causa (hoje, o login do Claude expirado). `ia` é `{ "instalado": true, "conectado": false }` e falta nos primeiros segundos, enquanto o programa ainda não conferiu o login. Com `aviso_cerebro` preenchido ou `ia.instalado && !ia.conectado`, a página mostra a faixa "A IA está desconectada" com o botão Conectar a IA. As rotas de IA que falham por falta de login respondem 503 com `"conectar_ia": true`, e a página abre a janela de conexão. `tem_qr` verdadeiro quer dizer que `GET /qr.png` devolve a imagem do código (trocar a cada 2 segundos com `?r=` aleatório).
 
 `POST /api/liga` `{ "ligar": true }` liga ou pausa o atendente. Erro 400 se os dados do negócio ainda não foram salvos.
 
@@ -289,7 +290,7 @@ Cada item de `lead.historico`:
   Resposta: `{ "ok": true }`. A mensagem aparece no histórico na próxima busca.
 
   Gravação de voz: use `MediaRecorder` com o primeiro tipo que o navegador aceitar nesta ordem: `audio/ogg;codecs=opus`, `audio/mp4;codecs=mp4a.40.2`, `audio/mp4`, `audio/webm;codecs=opus`. Só o ogg sai como mensagem de voz; os outros saem como arquivo de áudio.
-- `atendente` é sempre opcional. O nome de quem atende fica no navegador, em `localStorage["atendente.nome"]`.
+- Desde a versão 2.2 o nome de quem atende vem do login. Os campos `atendente` e `X-Atendente` são ignorados.
 
 ## Etiquetas
 
@@ -322,3 +323,140 @@ Cada item de `lead.historico`:
 ## Números que recebem os avisos
 
 `config.numeros_humanos` é uma lista (`["5527999990000", "5527988880000"]`). Todos recebem os avisos e todos podem mandar `/lista` e `/retomar`. `config.numero_humano` continua existindo só para leitura (é o primeiro da lista). Salve por `POST /api/config` `{ "numeros_humanos": [...] }`.
+
+# Versão 2.2: login, banco de dados e contatos
+
+## Acesso (login)
+
+Tudo em `/api/...` e as planilhas (`.csv`) exigem sessão, menos as rotas desta lista marcadas como livres. A sessão vai em um cookie `HttpOnly`, `SameSite=Strict`, chamado `atendente_PORTA`. Sem sessão a resposta é `401` com `{ "ok": false, "erro": "...", "entrar": true }` (ou `"precisa_criar": true` quando ainda não existe conta). Com a senha provisória ainda não trocada, tudo responde `403` com `"trocar_senha": true`, menos `/api/senha`. Sem permissão para a rota: `403` com `"sem_permissao": true`.
+
+Tipos de acesso (`papel`): `superadmin` (tudo), `admin` (tudo menos equipe e registro) e `atendente` (conversas, contatos, agenda e relatório). O mapa de quem alcança cada rota está em `nivelDaRota`, em `acesso.go`.
+
+| Rota | Quem | O que faz |
+| --- | --- | --- |
+| `GET /api/sessao` | livre | `{ "versao", "precisa_criar", "redefinir", "redefinir_nome", "usuario", "min_senha" }`. `usuario` é `null` ou `{ id, nome, email, papel, papel_nome, ativo, trocar_senha, criado_em, ultimo_acesso }` |
+| `POST /api/primeiro-acesso` | livre, só sem nenhuma conta | `{ nome, email, senha, senha2 }` cria o super administrador e já abre a sessão. `409` se já existir conta |
+| `POST /api/entrar` | livre | `{ email, senha }`. `401` com "E-mail ou senha incorretos."; `429` com `espera_min` depois de 5 erros seguidos para o mesmo e-mail em 15 minutos |
+| `POST /api/sair` | livre | Encerra a sessão e apaga o cookie |
+| `POST /api/senha` | logado | `{ atual, nova, nova2 }` troca a própria senha e encerra as outras sessões da conta |
+| `POST /api/redefinir-senha` | livre, só com a recuperação aberta | `{ senha, senha2 }` cria a senha nova do super administrador. A recuperação abre por 30 minutos com `./atendente -esqueci-senha` |
+| `GET /api/usuarios` | superadmin | `{ "usuarios": [ { ..., "voce": true } ], "papeis": [ { id, nome, dica } ] }` |
+| `POST /api/usuarios` | superadmin | `{ nome, email, papel, senha }`. A senha é provisória: a pessoa cria a própria na primeira entrada |
+| `POST /api/usuarios/alterar` | superadmin | `{ id, nome?, papel?, ativo?, senha? }`. `senha` vira provisória e encerra as sessões da pessoa |
+| `POST /api/usuarios/excluir` | superadmin | `{ id }`. O super administrador não pode ser removido, desativado nem ter o acesso trocado |
+| `GET /api/registro?limite=50&antes=N` | superadmin | `{ "registros": [ { n, quando, usuario, acao, texto, detalhe } ], "tem_mais" }`, do mais novo para o mais antigo |
+
+Erros de formulário trazem `campo` (por exemplo `"campo": "senha2"`), para a tela mostrar o aviso no lugar certo.
+
+## Contatos
+
+`GET /api/contatos?q=&situacao=&temperatura=&etiqueta=&ordem=`
+
+- `q`: nome, telefone, etiqueta ou trecho do que a pessoa precisa. Só números procura no telefone.
+- `situacao`: `assistente`, `fila` ou `atendimento`. `temperatura`: `quente`, `morno`, `frio` ou `indefinido`.
+- `ordem`: `recentes` (padrão), `antigos`, `nome` ou `pontuacao`.
+
+Resposta: `{ "contatos": [ ...mesmos campos do lead, sem o histórico... ], "total", "total_geral", "etiquetas" }`. `total_msgs` conta todas as mensagens trocadas desde o começo.
+
+`GET /contatos.csv` (lista simples) e `GET /leads.csv` (com os dados de qualificação) aceitam os mesmos filtros.
+
+## Conversas longas
+
+A memória guarda as últimas 80 mensagens de cada conversa; o banco guarda todas. `GET /api/lead` devolve também `"tem_anteriores": true` quando há mensagens mais antigas. Cada mensagem tem `n`, o número dela no banco.
+
+`GET /api/lead/historico?id=...&antes=N` devolve `{ "ok": true, "mensagens": [...], "tem_mais": true }` com até 60 mensagens anteriores à de número `N`, em ordem de tempo.
+
+## Banco de dados
+
+Um arquivo SQLite, `dados/atendente.db`, criado pelo próprio programa. Tabelas: `config` (dados do negócio e ajustes), `contatos`, `mensagens`, `agendamentos`, `usuarios`, `sessoes`, `registro` e `meta`. Uma cópia por dia fica em `dados/copias/` (as 7 mais novas). Os arquivos `config.json`, `leads.json` e `agenda.json` das versões anteriores são levados para o banco na primeira vez e ficam guardados com o final `.migrado`.
+
+
+## Versão 2.3: conexão da IA
+
+O login do Claude feito pelo painel. Todas as rotas são de administrador. O programa roda só o comando fixo `claude auth login --claudeai` e nunca vê a senha.
+
+### `GET /api/ia/conexao`
+
+`?agora=1` confere de novo na hora (sem isso, o programa reaproveita a última conferência por 20 segundos).
+
+```json
+{
+  "instalado": true,
+  "conectado": false,
+  "conta": "",
+  "plano": "",
+  "em_andamento": false,
+  "endereco": "",
+  "erro": ""
+}
+```
+
+- `instalado`: o `claude` existe neste computador.
+- `conectado`: o login está valendo. `conta` e `plano` vêm preenchidos quando o `claude` informa.
+- `em_andamento`: há um login aberto, esperando a pessoa autorizar no navegador (até 10 minutos).
+- `endereco`: página de reserva do Claude, para quando o navegador não abre sozinho. Só aparece com o login em andamento e só aceita endereços `https` do Claude. Essa página mostra um código no final.
+- `erro`: frase pronta quando o último login não terminou.
+
+### `POST /api/ia/conectar`
+
+Corpo `{}`. Inicia o login (ou não faz nada se já houver um em andamento) e devolve o mesmo objeto de `GET /api/ia/conexao`. Responde 503 se o `claude` não estiver instalado.
+
+### `POST /api/ia/conectar/codigo`
+
+Corpo `{ "codigo": "..." }`. Entrega ao login em andamento o código que a página de reserva mostrou. 400 para código vazio, com espaço ou quebra de linha. 409 se não houver login em andamento.
+
+### `POST /api/ia/conectar/cancelar`
+
+Corpo `{}`. Encerra o login em andamento.
+
+## Versão 2.4: ChatGPT por chave, etiquetas da IA e contexto da equipe
+
+### Quem responde
+
+`GET /api/estado` passa a trazer `"modo": "openai"` quando o ChatGPT está em uso, e `ia` vira:
+
+```json
+{ "provedor": "claude | openai", "instalado": true, "conectado": true, "motivo": "" }
+```
+
+`motivo` diz por que não está pronto: `claude_login`, `openai_chave`, `openai_credito` ou `openai_modelo`. A página usa o motivo para escolher o texto da faixa vermelha.
+
+`GET /api/ia/conexao` ganha campos (os antigos continuam, e falam do login do Claude):
+
+```json
+{
+  "provedor": "openai",
+  "conectado": true,
+  "motivo": "",
+  "claude_conectado": false,
+  "openai": { "tem_chave": true, "final": "AbC9", "modelo": "gpt-5-mini", "origem": "cofre | ambiente" }
+}
+```
+
+`conectado` é do provedor em uso. A chave nunca volta: só `final`, as 4 últimas letras.
+
+### `POST /api/ia/openai`
+
+Corpo `{ "chave": "sk-...", "modelo": "" }`. Confere a chave com a OpenAI, guarda no cofre de senhas do sistema, escolhe o modelo (o enviado, o que já estava ou um padrão da conta) e passa a usar o ChatGPT. Sem `chave`, só troca o modelo. Devolve o objeto de `GET /api/ia/conexao` mais `"modelos": ["gpt-..."]`. 400 para chave em formato errado, chave recusada pela OpenAI ou nome de modelo inválido. 502 se a OpenAI não respondeu. 500 se o computador não tem cofre de senhas (a chave não é guardada).
+
+### `GET /api/ia/openai/modelos`
+
+`{ "modelos": ["gpt-..."] }`: os modelos de conversa da conta da chave guardada. Lista vazia sem chave.
+
+### `POST /api/ia/provedor`
+
+Corpo `{ "provedor": "claude" | "openai" }`. Troca quem responde. 400 ao escolher `openai` sem chave.
+
+### `POST /api/ia/openai/remover`
+
+Corpo `{}`. Apaga a chave do cofre e volta para o Claude. 409 se a chave vem da variável `OPENAI_API_KEY`.
+
+`POST /api/config` ignora `provedor` e `modelo_openai`: quem responde só muda pelas rotas acima.
+
+### Etiquetas criadas pela IA
+
+- A saída da IA tem `lead.etiquetas` (lista de textos, até 3 por resposta).
+- Cada lead em `GET /api/estado`, `GET /api/lead` e `GET /api/contatos` traz `etiquetas_ia`: as etiquetas de `etiquetas` que foram criadas pela IA.
+- `POST /api/lead/etiquetas` devolve também `etiquetas_ia`. O que a pessoa tira por essa rota a IA não repõe.
+- `POST /api/treinar` devolve `etiquetas`: as etiquetas da conversa simulada. A página manda de volta em `lead.etiquetas` no pedido seguinte.
+

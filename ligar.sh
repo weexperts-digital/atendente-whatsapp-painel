@@ -24,7 +24,7 @@ for _ in $(seq 1 30); do
   sleep 1
   if [ -f porta.txt ]; then
     PORTA="$(<porta.txt)"
-    if curl -fs "http://127.0.0.1:${PORTA}/api/estado" > /dev/null 2>&1; then
+    if curl -fs "http://127.0.0.1:${PORTA}/api/sessao" > /dev/null 2>&1; then
       echo "Atendente no ar: http://localhost:${PORTA}"
       exit 0
     fi

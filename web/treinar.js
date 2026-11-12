@@ -335,7 +335,8 @@
       h('span', { class: 'so-leitor', text: 'O que a IA entendeu:' }),
       h('span', { class: 'etiqueta temp-' + temp }, icone('termometro'), FRASE_TEMP[temp]),
       info.transbordo ? h('span', { class: 'etiqueta etiqueta-aguardando' }, icone('pessoa'), 'Chamaria uma pessoa') : null,
-      agenda ? h('span', { class: 'etiqueta tr-etiqueta-agenda' }, icone('agenda'), agenda) : null);
+      agenda ? h('span', { class: 'etiqueta tr-etiqueta-agenda' }, icone('agenda'), agenda) : null,
+      (info.etiquetas || []).map((e) => h('span', { class: 'etiqueta tr-etiqueta-ia', title: 'Etiqueta criada pela IA' }, icone('ia'), String(e))));
 
     function alargar() {
       caixa.classList.toggle('tr-msg-aberta', !!(m.aberto || m.corrigindo));
@@ -470,6 +471,7 @@
       info: {
         transbordo: !!r.transbordo, motivo: r.motivo || '', lead: r.lead || {},
         agendamento: r.agendamento || {}, trechos: r.trechos || [], modo: r.modo || '', ms: r.ms || 0,
+        etiquetas: Array.isArray(r.etiquetas) ? r.etiquetas : [],
       },
     };
     t.mensagens.push(msg);

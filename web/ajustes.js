@@ -5,11 +5,11 @@
 (function () {
   let tela = null;
 
-  const CHAVE_NOME = 'atendente.nome';
   const EXEMPLO = '5527999990000';
   const TECLAS = [' ', ',', 'Tab', 'Enter'];
   const MODOS = {
     claude: 'Em uso agora: o Claude Code deste computador.',
+    openai: 'Em uso agora: o ChatGPT, pela chave da OpenAI.',
     api: 'Em uso agora: a API da Anthropic, como reserva.',
     teste: 'Em uso agora: modo teste. O Claude não foi encontrado neste computador, então as respostas são fixas.',
   };
@@ -34,17 +34,6 @@
       svg.appendChild(p);
     }
     return svg;
-  }
-
-  function lerNome() {
-    try { return (localStorage.getItem(CHAVE_NOME) || '').trim(); } catch (e) { return ''; }
-  }
-
-  function gravarNome(nome) {
-    try {
-      if (nome) localStorage.setItem(CHAVE_NOME, nome);
-      else localStorage.removeItem(CHAVE_NOME);
-    } catch (e) { /* sem armazenamento neste navegador */ }
   }
 
   function soDigitos(s) {
@@ -92,7 +81,6 @@
       atraso_max: numero(c.atraso_max, 8),
       limite_msgs: numero(c.limite_msgs, 6),
       modelo: c.modelo || '',
-      nome: lerNome(),
     };
   }
 
@@ -109,10 +97,6 @@
     }
     if (a.modelo !== b.modelo) m.modelo = a.modelo;
     return m;
-  }
-
-  function nomeMudou() {
-    return S.ajustes.nome.trim() !== lerNome();
   }
 
   // ---------- Tela ----------
@@ -146,6 +130,30 @@
     tela = null;
   }
 
+  // pintarConexao mostra se a conta do Claude está conectada e o botão para conectar.
+  function pintarConexao(ia) {
+    if (!tela.conexao) return;
+    const chatgpt = !!ia && ia.provedor === 'openai';
+    // Com o ChatGPT em uso, a lista de modelos do Claude não vale: o modelo é escolhido na conexão.
+    if (tela.campoModelo) tela.campoModelo.hidden = chatgpt;
+    if (tela.notaModelo) tela.notaModelo.hidden = !chatgpt;
+    const situacao = ia ? (!ia.instalado ? 'falta' : (ia.conectado ? 'ok' : 'fora')) : '';
+    const marca = situacao + (chatgpt ? '|chatgpt' : '');
+    if (tela.conexao.dataset.marca === marca) return;
+    tela.conexao.dataset.marca = marca;
+    const textos = {
+      ok: chatgpt ? 'ChatGPT em uso, pela chave da OpenAI' : 'Conta do Claude conectada',
+      fora: 'IA desconectada', falta: 'Falta o Claude Code neste computador',
+    };
+    trocar(tela.conexao, situacao ? [
+      h('span', { class: 'cx-situacao' }, h('span', { class: 'cx-ponto', 'data-estado': situacao === 'ok' ? 'ok' : 'fora' }), textos[situacao]),
+      botao(situacao === 'ok' ? 'Trocar ou ver a conexão' : 'Conectar a IA', {
+        classe: situacao === 'ok' ? 'btn-suave' : 'btn-primario', icone: 'ia',
+        aoClicar: () => CONEXAO.abrir(),
+      }),
+    ] : []);
+  }
+
   // atualizar roda a cada 3 segundos: só mexe no que não é formulário.
   function atualizar() {
     if (!tela || !tela.barra) return;
@@ -154,13 +162,14 @@
     tela.desconectar.hidden = e.status !== 'conectado';
     tela.modo.textContent = MODOS[e.modo] || '';
     tela.modo.hidden = !MODOS[e.modo];
+    pintarConexao(e.ia);
     const tema = temaDoPainel();
     for (const b of tela.temas) b.setAttribute('aria-pressed', b.dataset.tema === tema ? 'true' : 'false');
   }
 
   function refletir() {
     if (!tela || !tela.barra || !S.ajustes) return;
-    const sujo = Object.keys(mudancas()).length > 0 || nomeMudou();
+    const sujo = Object.keys(mudancas()).length > 0;
     S.ajustesSujos = sujo;
     const marca = sujo ? 'sim' : 'nao';
     if (tela.barra.dataset.sujo === marca) return;
@@ -271,9 +280,7 @@
     if (limite < 1) throw new Error('O limite de mensagens precisa ser de pelo menos 1.');
 
     const parte = mudancas();
-    const nome = a.nome.trim();
     if (Object.keys(parte).length) await salvarConfig(parte);
-    gravarNome(nome);
     S.ajustes = salvos();
     S.ajustesSujos = false;
     if (tela) pintar();
@@ -284,6 +291,8 @@
     const a = S.ajustes;
     tela.whats = typeof criarBlocoWhats === 'function' ? criarBlocoWhats() : null;
     tela.modo = h('p', { class: 'ajuda' });
+    tela.conexao = h('div', { class: 'cx-linha', role: 'status' });
+    tela.notaModelo = h('p', { class: 'ajuda', hidden: true, text: 'O modelo do ChatGPT é escolhido em Trocar ou ver a conexão.' });
     tela.desconectar = h('div', { class: 'acoes' }, botao('Desconectar este aparelho', {
       classe: 'btn-perigo-suave', icone: 'celular',
       aoClicar: async () => {
@@ -345,14 +354,17 @@
           bloco(desenho(BLOQUEIO), 'Números ignorados',
             'O assistente fica quieto com estes números. Bom para família, amigos e fornecedores.',
             tela.nunca.el),
-          bloco(icone('pessoa'), 'Atendimento',
-            'Quem está usando este painel para falar com os clientes.',
-            campo('Seu nome de atendente', entrada(a, 'nome', { autocomplete: 'off', maxLength: 40, placeholder: 'Ex.: Oliveira' }, refletir),
-              'Fica registrado no histórico quando você assume uma conversa. O cliente não vê. Vale só neste navegador.'))),
+          bloco(icone('pessoa'), 'Sua conta',
+            'Você entrou como ' + (SESSAO.usuario ? SESSAO.usuario.nome + ' (' + SESSAO.usuario.email + ')' : '') + '. O seu nome fica no histórico quando você assume uma conversa. O cliente não vê.',
+            h('div', { class: 'acoes' },
+              botao('Trocar senha', { icone: 'cadeado', aoClicar: () => ACESSO.trocarSenha() }),
+              botao('Sair do painel', { classe: 'btn-fantasma', icone: 'sair', aoClicar: () => ACESSO.sair() })))),
         h('div', { class: 'aj-coluna' },
           bloco(icone('ia'), 'Cérebro',
-            'O cérebro do assistente é o Claude. Modelos mais rápidos respondem em menos tempo. Os mais capazes entendem melhor conversas difíceis.',
-            campoModelo,
+            'Quem pensa pelo assistente: o Claude, com o login da sua conta, ou o ChatGPT, com uma chave da OpenAI. Modelos mais rápidos respondem em menos tempo. Os mais capazes entendem melhor conversas difíceis.',
+            tela.conexao,
+            (tela.campoModelo = campoModelo),
+            tela.notaModelo,
             tela.modo),
           bloco(icone('relogio'), 'Ritmo das respostas',
             'O assistente espera um pouco antes de responder, mostrando "digitando". Fica mais natural.',
@@ -366,11 +378,13 @@
             'O tema claro costuma ficar melhor em projetor e em salas iluminadas.',
             h('div', { class: 'segmentado aj-tema', role: 'group', 'aria-label': 'Tema do painel' }, tela.temas)),
           bloco(icone('desfazer'), 'Configuração inicial',
-            'Passe de novo pelos passos do começo: negócio, assistente, avisos, WhatsApp e ligar.',
+            'Passe de novo pelos passos do começo: IA, negócio, assistente, avisos, WhatsApp e ligar.',
             h('div', { class: 'acoes' }, botao('Refazer a configuração inicial', {
               icone: 'desfazer',
               aoClicar: () => { if (typeof abrirInicio === 'function') return abrirInicio(); return undefined; },
             }))))),
+      // Equipe e registro de acessos: só o super administrador recebe estes blocos.
+      h('div', { class: 'aj-coluna aj-acessos' }, typeof blocosDeAcesso === 'function' ? blocosDeAcesso() : null),
       tela.barra));
     refletir();
     atualizar();

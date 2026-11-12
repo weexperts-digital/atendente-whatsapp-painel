@@ -588,8 +588,13 @@ textarea.editor { min-height: max(460px, calc(100dvh - 420px)); font-family: var
 .variavel code { font-family: var(--mono); font-size: 12px; color: var(--roxo-texto); }
 .variavel span { color: var(--suave); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 
-.linha-extra { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 44px; gap: 8px; align-items: end; }
-.extra-chave { color: var(--suave); font-size: 12px; font-family: var(--mono); }
+/* Nome, Valor e a lixeira na mesma linha, com os campos na mesma altura.
+   A dica de como usar a variável vai na linha de baixo. */
+.linha-extra { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) 44px; gap: 6px 12px; align-items: end; }
+.linha-extra .campo > input { max-width: none; }
+.extra-chave { grid-column: 1 / -1; color: var(--suave); font-size: 12px; }
+.extra-chave[hidden] { display: none; }
+.extra-chave code { font-family: var(--mono); color: var(--roxo-texto); }
 
 .nota {
   display: flex; gap: 10px; align-items: flex-start;
@@ -896,6 +901,8 @@ details.cartao > .pilha > .campo, details.cartao > .pilha > .acoes { max-width: 
   .hora-rotulo { display: block; }
   .linha-extra { grid-template-columns: minmax(0, 1fr) 44px; }
   .linha-extra .campo-valor { grid-column: 1 / -1; grid-row: 2; }
+  .linha-extra { row-gap: 12px; }
+  .linha-extra .extra-chave { grid-row: 3; margin-top: -6px; }
   .material { grid-template-columns: 24px minmax(0, 1fr); }
   .material-acoes { grid-column: 2; justify-content: space-between; }
   .simulador { height: 480px; }

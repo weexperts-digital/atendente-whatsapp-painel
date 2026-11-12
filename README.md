@@ -2,14 +2,19 @@
 
 Um atendente de inteligência artificial para o WhatsApp do seu negócio. Ele conversa com quem escreve, entende o que a pessoa precisa, separa os leads em quente, morno e frio, marca horários na agenda e chama você quando é hora de uma pessoa assumir.
 
-Roda no seu computador. O cérebro é o Claude, pela sua conta do Claude Code. Não tem servidor, não tem login e não tem mensalidade deste projeto.
+Roda no seu computador. O cérebro é o Claude, pela sua conta do Claude Code. Não tem servidor para contratar e não tem mensalidade deste projeto. O painel tem login e senha, e tudo fica guardado em um banco de dados no próprio computador.
 
 Esta é a versão com painel completo. A versão mais simples, usada na palestra do SM Summit, fica em [weexperts-digital/atendente-whatsapp](https://github.com/weexperts-digital/atendente-whatsapp).
 
 ## O que ele faz
 
 - **Conversas**: uma tela com cara de WhatsApp, com foto do contato, áudio, imagem, vídeo e PDF dentro da conversa. Quem foi transferido entra em uma fila; a pessoa da equipe clica em Iniciar atendimento, responde por texto, arquivo ou áudio, e depois devolve ao assistente. O cliente não vê quem está atendendo.
-- **Etiquetas e relatório**: marque as conversas com etiquetas e veja um relatório simples de conversas, transferências, agendamentos e respostas.
+- **Contatos**: todo mundo que já escreveu para o negócio em uma tabela, com busca, filtros e planilha para baixar.
+- **Login e equipe**: o primeiro acesso cria a conta do super administrador. Ele cria as contas da equipe (administrador ou atendente) e vê o registro de quem entrou e do que cada pessoa fez.
+- **Banco de dados**: contatos, todas as mensagens, agenda e contas ficam em um banco SQLite dentro da pasta do programa, com uma cópia de segurança por dia. Não precisa instalar nem configurar nada.
+- **Etiquetas e relatório**: a IA cria etiquetas sozinha durante o atendimento e você também marca as suas. Veja um relatório simples de conversas, transferências, agendamentos e respostas.
+- **Equipe e IA na mesma conversa**: tudo o que a equipe conversa com o cliente fica guardado. Quando a conversa volta para o assistente, ele lê o atendimento inteiro e continua de onde a equipe parou.
+- **Claude ou ChatGPT**: conecte o Claude com o login da sua conta, por um botão, ou use o ChatGPT com uma chave da OpenAI.
 - **Qualificação de leads**: pontua cada pessoa de 0 a 100 e avisa no seu WhatsApp quando o lead esquenta ou pede uma pessoa.
 - **Agenda**: um calendário de semana, dia e mês. Você cadastra serviços, dias e horários; o assistente oferece os horários livres e marca sozinho.
 - **Base de conhecimento**: envie PDF, Word, PowerPoint ou texto. A IA lê, resume e passa a responder com base nos seus materiais.
@@ -19,7 +24,7 @@ Esta é a versão com painel completo. A versão mais simples, usada na palestra
 ## Do que você precisa
 
 1. Um computador com Mac, Linux ou Windows.
-2. O [Claude Code](https://claude.com/claude-code) instalado e com a sua conta conectada. É ele que pensa as respostas.
+2. O [Claude Code](https://claude.com/claude-code) instalado. É ele que pensa as respostas, com a sua conta do Claude (plano pago). Você conecta a conta por um botão do painel, sem terminal. Se preferir, use o ChatGPT com uma chave da OpenAI.
 3. Um número de WhatsApp para o negócio. De preferência um número só para isso.
 
 ## Como ligar
@@ -60,11 +65,15 @@ Os scripts do Windows ainda não foram testados em uma máquina de verdade. Se a
 
 O painel abre em `http://localhost:8787` e guia você:
 
-1. Conte sobre o seu negócio. Dá para escrever em poucas palavras e deixar a IA preencher os campos.
-2. Escolha o nome e o tom do assistente.
-3. Informe o WhatsApp que recebe os avisos de lead quente.
-4. Leia o código QR com o WhatsApp do negócio (WhatsApp, Configurações, Aparelhos conectados, Conectar aparelho).
-5. Ligue o atendente e mande um "Oi" de outro celular.
+1. Crie a conta do super administrador: seu nome, e-mail e uma senha, digitada duas vezes. Guarde bem essa senha.
+2. Conecte a IA: clique em Conectar o Claude, entre na sua conta do Claude no navegador e autorize. Não precisa de terminal. Se preferir o ChatGPT, escolha a aba ChatGPT e cole uma chave da OpenAI.
+3. Conte sobre o seu negócio. Dá para escrever em poucas palavras e deixar a IA preencher os campos.
+4. Escolha o nome e o tom do assistente.
+5. Informe o WhatsApp que recebe os avisos de lead quente.
+6. Leia o código QR com o WhatsApp do negócio (WhatsApp, Configurações, Aparelhos conectados, Conectar aparelho).
+7. Ligue o atendente e mande um "Oi" de outro celular.
+
+Para dar acesso a outras pessoas, vá em Ajustes, Equipe e acessos.
 
 Depois disso:
 
@@ -74,6 +83,8 @@ Depois disso:
 | Parar | `./parar.sh` |
 | Ver o que aconteceu | abra o arquivo `atendente.log` |
 | Atualizar depois de mudar o código | `./instalar.sh` |
+| Aparece a faixa vermelha "A IA está desconectada" | Clique em Conectar a IA, entre na sua conta do Claude no navegador e autorize. A tela avisa quando terminar. Enquanto isso, as conversas novas vão para a fila da equipe. Plano B: `claude auth login` no terminal |
+| Esqueci a senha do super administrador | `./atendente -esqueci-senha` e recarregue a página (ou peça ao Claude Code: esqueci a senha do painel) |
 
 Se o computador dormir ou desligar, o atendente para. Ele volta quando você ligar de novo.
 
@@ -83,12 +94,13 @@ Se o computador dormir ou desligar, o atendente para. Ele volta quando você lig
 WhatsApp  ->  atendente (Go)  ->  claude -p (sem ferramentas)  ->  resposta
                    |
                    +-- painel local em 127.0.0.1 (pasta web/)
-                   +-- dados/ (seus dados, só no seu computador)
+                   +-- dados/atendente.db (banco de dados, só no seu computador)
 ```
 
 - **Um programa só**, em Go, com a página embutida. A conexão com o WhatsApp usa a biblioteca [whatsmeow](https://github.com/tulir/whatsmeow).
 - **A cada mensagem** o programa monta as instruções com a personalidade, o cérebro, as regras de transbordo, os aprendizados, os trechos dos seus materiais que combinam com a conversa e os horários livres da agenda. Depois chama o `claude` e recebe a resposta em um formato fixo (resposta, dados do lead, transbordo, agendamento).
 - **Base de conhecimento**: o texto dos arquivos é extraído no próprio programa e dividido em trechos. Bases pequenas vão inteiras nas instruções. Bases grandes passam por uma busca por palavras (BM25) e só os trechos mais ligados à conversa entram.
+- **Banco de dados**: um arquivo SQLite, `dados/atendente.db`, criado pelo próprio programa. Guarda os dados do negócio, os contatos, todas as mensagens, a agenda, as contas do painel e o registro de acessos. Todo dia uma cópia vai para `dados/copias/`.
 - **Seus dados** ficam na pasta `dados/`, que nunca vai para o repositório.
 
 A descrição das rotas do painel está em [docs/API.md](docs/API.md).
@@ -99,8 +111,12 @@ A descrição das rotas do painel está em [docs/API.md](docs/API.md).
 - Nenhuma mensagem de WhatsApp consegue executar comandos no seu computador. O Claude é chamado sem nenhuma ferramenta (`--tools ""`), em uma pasta vazia, e só lê texto.
 - Fotos, áudios, vídeos e documentos que os clientes mandam são baixados somente dos servidores do WhatsApp e guardados em `dados/midia`, para a equipe ver no painel. O programa não abre nem executa esses arquivos, e a IA não os lê. As fotos de perfil vêm do mesmo lugar.
 - O painel escuta só em `127.0.0.1`. Ninguém de fora do computador consegue abrir.
-- Nenhuma chave de API é gravada em arquivo.
-- O texto das conversas e dos materiais é enviado ao Claude para gerar as respostas. Fora isso, nada sai do computador.
+- O painel pede login. As senhas ficam guardadas só como hash (Argon2id, com sal), nunca em texto. A sessão vai em um cookie que o JavaScript não lê e que não acompanha pedidos de outros sites. Cinco senhas erradas seguidas seguram o e-mail por 15 minutos.
+- Cada tipo de acesso alcança só as suas rotas, e isso é conferido no programa, não só na tela. Entradas, senhas erradas, atendimentos, ajustes e planilhas baixadas ficam no registro de acessos.
+- Não existe recuperação de senha por e-mail. Quem perde a senha do super administrador precisa estar no computador para criar outra.
+- Nenhuma chave de API é gravada em arquivo. A chave da OpenAI, quando usada, fica no cofre de senhas do sistema (Keychain no Mac, Gerenciador de Credenciais no Windows) e a página só mostra as 4 últimas letras.
+- Com o ChatGPT, vale a mesma regra do Claude: o pedido leva só texto e não declara nenhuma ferramenta.
+- O texto das conversas e dos materiais é enviado ao Claude, ou à OpenAI se você escolher o ChatGPT, para gerar as respostas. Fora isso, nada sai do computador.
 
 ## Avisos importantes
 
@@ -144,6 +160,9 @@ Mapa dos arquivos:
 | `agenda.go` | horários livres, marcação e cancelamento |
 | `midia.go` | mídias recebidas e enviadas, fotos de perfil, etiquetas e relatório |
 | `whats.go` | conexão, QR, mensagens, limites e avisos |
+| `banco.go` | banco de dados SQLite, gravação do que mudou e cópia diária |
+| `acesso.go` | contas, senhas, sessões, permissões por rota e registro de acessos |
+| `contatos.go` | lista de contatos, filtros e planilha |
 | `painel.go` | servidor local e rotas |
 | `web/` | a página: HTML, CSS e JavaScript puros, sem etapa de build. As bibliotecas de terceiros ficam em `web/vendor/`, com as licenças em `web/vendor/LEIA-ME.md` |
 

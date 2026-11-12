@@ -5,8 +5,9 @@
 /* A tela ocupa toda a área útil: sem respiro em volta e sem rolar a página. */
 #conteudo[data-aba="conversas"] { padding: 0; max-width: none; }
 
-.cv {
-  /* Cores do WhatsApp, tema claro. */
+/* Cores do WhatsApp, tema claro. Valem na tela e no painel do filtro (.cv-sus), que abre
+   na camada de cima, fora da tela. */
+.cv, .cv-sus {
   --wa-fundo: #EFEAE2;            /* fundo da conversa */
   --wa-recebida: #FFFFFF;         /* bolha recebida */
   --wa-enviada: #D9FDD3;          /* bolha enviada */
@@ -32,7 +33,9 @@
   --wa-suave-cartao-enviada: #4A5A63;
   --wa-autor-equipe: #5636D8;
   --wa-sombra: 0 1px .5px rgba(11, 20, 26, .13);
+}
 
+.cv {
   position: relative;
   display: grid;
   grid-template-columns: clamp(320px, 28%, 340px) minmax(0, 1fr);
@@ -42,7 +45,7 @@
   background: var(--sup);
 }
 
-:root[data-theme="dark"] .cv {
+:root[data-theme="dark"] .cv, :root[data-theme="dark"] .cv-sus {
   --wa-fundo: #0B141A;
   --wa-recebida: #202C33;
   --wa-enviada: #005C4B;
@@ -141,64 +144,76 @@
 }
 .cv-busca-limpar:hover { color: var(--wa-texto); }
 
-/* Filtros em pílula, do jeito de sempre: ponto da temperatura, nome e contagem. */
-.cv-filtros { display: flex; flex-direction: column; gap: 12px; padding: 12px 12px 12px; }
-.cv-filtros-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 5px; min-width: 0; }
-.cv-filtro {
-  position: relative;
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 32px; padding: 0 10px;
-  background: var(--wa-barra); color: var(--wa-suave-barra);
-  border: 1px solid transparent; border-radius: 16px;
-  font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
+/* Um filtro só: o botão diz o que está valendo e abre o painel com os três grupos. */
+.cv-filtro-linha { padding: 8px 12px 0; min-width: 0; }
+.cv-filtro-caixa { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.cv-filtrar {
+  flex: 1; min-width: 0;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 12px 0 14px;
+  background: transparent; color: var(--wa-texto);
+  border: 1px solid var(--wa-linha); border-radius: 22px;
+  font-size: 13.5px; font-weight: 600; text-align: left; cursor: pointer;
   transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }
-/* O toque alcança 44px de altura mesmo com a pílula mais baixa. */
-.cv-filtro::after { content: ""; position: absolute; inset: -6px 0; }
-.cv-filtro:hover { color: var(--wa-texto); border-color: var(--wa-contorno); }
-.cv-filtro[aria-pressed="true"] {
+.cv-filtrar > .ic { width: 16px; height: 16px; color: var(--wa-suave-barra); }
+.cv-filtrar-texto { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-filtrar .cv-filtrar-seta { transition: transform .15s ease; }
+.cv-filtrar:hover { border-color: var(--wa-contorno); }
+.cv-filtrar:focus-visible { border-radius: 22px; }
+.cv-filtrar[aria-expanded="true"] { background: var(--wa-barra); border-color: var(--wa-contorno); }
+.cv-filtrar[aria-expanded="true"] .cv-filtrar-seta { transform: rotate(180deg); }
+.cv-filtrar.ativo {
   background: color-mix(in srgb, var(--wa-destaque) 16%, var(--wa-painel));
   color: var(--wa-destaque-texto);
   border-color: color-mix(in srgb, var(--wa-destaque) 55%, transparent);
 }
-.cv-filtro-ponto { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--temp, var(--wa-contorno)); }
-.cv-filtro-conta { color: var(--wa-texto); font-weight: 700; }
-.cv-filtro[aria-pressed="true"] .cv-filtro-conta { color: inherit; }
-.cv-filtro-destaque.tem .cv-filtro-conta {
-  min-width: 20px; height: 20px; padding: 0 6px; margin-right: -4px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--roxo-fundo); color: var(--sobre-roxo);
-  border-radius: 10px; font-size: 12px;
+.cv-filtrar.ativo > .ic { color: inherit; }
+.cv-filtrar-limpar {
+  flex: none; width: 44px; height: 44px; padding: 0;
+  display: grid; place-items: center;
+  background: transparent; border: 0; border-radius: 50%; color: var(--wa-suave-barra); cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
 }
+.cv-filtrar-limpar:hover { background: var(--wa-barra); color: var(--wa-texto); }
+.cv-filtrar-limpar:focus-visible { border-radius: 50%; }
 
-.cv-etq-caixa {
-  position: relative; display: inline-flex; align-items: center; max-width: 100%;
-  margin: -6px 0; padding: 6px 0;   /* a área de toque chega a 44px */
-  color: var(--wa-suave-barra); cursor: pointer;
+/* Aviso da fila: só aparece quando tem gente esperando uma pessoa. */
+.cv-aviso-fila {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 40px; margin: 8px 12px 0; padding: 0 8px 0 12px;
+  background: color-mix(in srgb, var(--roxo) 12%, var(--wa-painel)); color: var(--wa-texto);
+  border: 1px solid color-mix(in srgb, var(--roxo) 34%, transparent); border-radius: 12px;
+  font-size: 13.5px; text-align: left; cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
 }
-.cv-etq-caixa > .ic { position: absolute; left: 11px; width: 14px; height: 14px; pointer-events: none; }
-.cv-etq-caixa::after {
-  content: ""; position: absolute; right: 13px; top: 50%; width: 6px; height: 6px;
-  border-right: 1.75px solid currentColor; border-bottom: 1.75px solid currentColor;
-  transform: translateY(-70%) rotate(45deg); pointer-events: none;
-}
-.cv .cv-etq-filtro {
-  width: auto; max-width: 100%; height: 32px; min-height: 32px; padding: 0 30px 0 30px;
-  background: var(--wa-barra); color: inherit;
-  border: 1px solid transparent; border-radius: 16px;
-  font-size: 12.5px; font-weight: 600; text-overflow: ellipsis; cursor: pointer;
-  -webkit-appearance: none; appearance: none;
-}
-.cv .cv-etq-filtro:hover { border-color: var(--wa-contorno); color: var(--wa-texto); }
-.cv .cv-etq-filtro:focus-visible { border-radius: 16px; outline-offset: 2px; }
-.cv-etq-caixa.ativo { color: var(--wa-destaque-texto); }
-.cv .cv-etq-caixa.ativo .cv-etq-filtro {
-  background: color-mix(in srgb, var(--wa-destaque) 16%, var(--wa-painel));
-  border-color: color-mix(in srgb, var(--wa-destaque) 55%, transparent);
-}
-.cv-etq-filtro option { color: var(--texto); background: var(--sup); }
+.cv-aviso-fila > .ic { width: 16px; height: 16px; color: var(--roxo-texto); }
+.cv-aviso-fila strong { flex: 1; min-width: 0; font-weight: 700; }
+.cv-aviso-fila-ver { display: inline-flex; align-items: center; gap: 2px; color: var(--roxo-texto); font-size: 12.5px; font-weight: 600; }
+.cv-aviso-fila-ver .ic { width: 15px; height: 15px; }
+.cv-aviso-fila:hover { background: color-mix(in srgb, var(--roxo) 18%, var(--wa-painel)); border-color: color-mix(in srgb, var(--roxo) 55%, transparent); }
+.cv-aviso-fila:focus-visible { border-radius: 12px; }
 
-.cv-itens { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--wa-linha); overscroll-behavior: contain; }
+/* Painel do filtro (suspenso.js), nas cores do WhatsApp. */
+.sus-painel.cv-sus {
+  --sus-fundo: var(--wa-painel);
+  --sus-texto: var(--wa-texto);
+  --sus-suave: var(--wa-suave-barra);
+  --sus-linha: var(--wa-linha);
+  --sus-ativo: var(--wa-ativo);
+  --sus-acento: var(--wa-destaque-texto);
+  padding: 0; border-radius: 14px;
+}
+.cv-sus .sus-rolagem { padding: 6px; }
+.cv-sus-pe {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 8px; border-top: 1px solid var(--wa-linha); background: var(--wa-painel);
+}
+.cv-sus-pe .btn { min-width: 0; min-height: 40px; padding: 0 14px; font-size: 13px; }
+.cv-sus-pe .btn.cv-btn-linha { flex: none; }
+.cv-sus-pe .btn.cv-btn-verde { flex: 1 1 auto; }
+
+.cv-itens { flex: 1; min-height: 0; margin-top: 10px; overflow-y: auto; border-top: 1px solid var(--wa-linha); overscroll-behavior: contain; }
 .cv-itens > .carregando { padding: 24px 16px; color: var(--wa-suave); }
 .cv-nota { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 24px 16px; color: var(--wa-suave); }
 
@@ -367,6 +382,7 @@
 .cv-msgs > .carregando { align-self: center; color: var(--wa-suave-barra); }
 .cv-nota-msgs { align-self: center; padding: 24px 0; color: var(--wa-suave-barra); text-align: center; }
 
+.cv-anteriores { align-self: center; padding: 4px 0 8px; }
 .cv-dia { align-self: center; margin: 12px 0 4px; }
 .cv-dia span {
   display: inline-block; padding: 5px 12px; border-radius: 8px;
@@ -598,9 +614,6 @@
 .btn.cv-apagar { align-self: stretch; margin-top: 4px; }
 
 /* ---------- Janelas desta tela ---------- */
-
-.cv-dlg-campo { margin-top: 16px; }
-.dialogo .cv-dlg-erro { color: var(--perigo); font-size: 13px; }
 
 .cv-visor {
   width: fit-content; max-width: 96vw; max-height: 96dvh; padding: 0; overflow: visible;

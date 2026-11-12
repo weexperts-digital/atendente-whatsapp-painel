@@ -53,8 +53,9 @@ CGO_ENABLED=0 "$GO" build -o atendente .
 # 4) O cerebro e o Claude Code. Sem ele o atendente liga em modo teste.
 if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; then
   dizer "Aviso: não achei o Claude Code neste computador."
-  echo "O atendente vai ligar em modo teste (respostas fixas)."
-  echo "Instale o Claude Code em https://claude.com/claude-code, entre na sua conta e rode ./ligar.sh de novo."
+  echo "O painel abre mesmo assim. Para o assistente responder de verdade, escolha um caminho:"
+  echo "  1. Instale o Claude Code em https://claude.com/claude-code e rode ./ligar.sh de novo. Depois clique em Conectar a IA no painel."
+  echo "  2. Ou use o ChatGPT: no painel, em Conectar a IA, aba ChatGPT, cole uma chave da OpenAI."
 fi
 
 # 5) Liga e abre o painel.

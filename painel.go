@@ -31,19 +31,33 @@ const portaInicial = 8787
 //go:embed all:web
 var arquivosWeb embed.FS
 
-// iniciarPainel sobe o servidor local. Escuta SO em 127.0.0.1.
-func (a *App) iniciarPainel() (int, error) {
+// rotas junta todos os enderecos do painel.
+func (a *App) rotas() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/", a.rotaArquivos())
 	mux.HandleFunc("/qr.png", a.rotaQR)
 	mux.HandleFunc("/leads.csv", a.rotaLeadsCSV)
 	mux.HandleFunc("/agenda.csv", a.rotaAgendaCSV)
+	mux.HandleFunc("/contatos.csv", a.rotaContatosCSV)
+	mux.HandleFunc("/api/contatos", a.rotaContatos)
+
+	mux.HandleFunc("/api/sessao", a.rotaSessao)
+	mux.HandleFunc("/api/primeiro-acesso", a.rotaPrimeiroAcesso)
+	mux.HandleFunc("/api/entrar", a.rotaEntrar)
+	mux.HandleFunc("/api/sair", a.rotaSair)
+	mux.HandleFunc("/api/senha", a.rotaSenha)
+	mux.HandleFunc("/api/redefinir-senha", a.rotaRedefinir)
+	mux.HandleFunc("/api/usuarios", a.rotaUsuarios)
+	mux.HandleFunc("/api/usuarios/alterar", a.rotaAlterarUsuario)
+	mux.HandleFunc("/api/usuarios/excluir", a.rotaExcluirUsuario)
+	mux.HandleFunc("/api/registro", a.rotaRegistro)
 
 	mux.HandleFunc("/api/estado", a.rotaEstado)
 	mux.HandleFunc("/api/liga", a.rotaLiga)
 	mux.HandleFunc("/api/whatsapp/desconectar", a.rotaDesconectar)
 
 	mux.HandleFunc("/api/lead", a.rotaLead)
+	mux.HandleFunc("/api/lead/historico", a.rotaHistorico)
 	mux.HandleFunc("/api/retomar", a.rotaRetomar)
 	mux.HandleFunc("/api/assumir", a.rotaAssumir)
 	mux.HandleFunc("/api/responder", a.rotaResponder)
@@ -61,6 +75,14 @@ func (a *App) iniciarPainel() (int, error) {
 	mux.HandleFunc("/api/ia/negocio", a.rotaIANegocio)
 	mux.HandleFunc("/api/ia/melhorar", a.rotaIAMelhorar)
 	mux.HandleFunc("/api/ia/cerebro", a.rotaIACerebro)
+	mux.HandleFunc("/api/ia/conexao", a.rotaConexao)
+	mux.HandleFunc("/api/ia/conectar", a.rotaConectar)
+	mux.HandleFunc("/api/ia/conectar/codigo", a.rotaCodigoLogin)
+	mux.HandleFunc("/api/ia/conectar/cancelar", a.rotaCancelarLogin)
+	mux.HandleFunc("/api/ia/openai", a.rotaOpenAI)
+	mux.HandleFunc("/api/ia/openai/modelos", a.rotaModelosOpenAI)
+	mux.HandleFunc("/api/ia/openai/remover", a.rotaRemoverOpenAI)
+	mux.HandleFunc("/api/ia/provedor", a.rotaProvedor)
 	mux.HandleFunc("/api/treinar", a.rotaTreinar)
 	mux.HandleFunc("/api/aprendizado", a.rotaAprendizado)
 
@@ -73,7 +95,12 @@ func (a *App) iniciarPainel() (int, error) {
 	mux.HandleFunc("/api/agenda", a.rotaAgenda)
 	mux.HandleFunc("/api/agenda/marcar", a.rotaMarcar)
 	mux.HandleFunc("/api/agenda/cancelar", a.rotaCancelar)
+	return mux
+}
 
+// iniciarPainel sobe o servidor local. Escuta SO em 127.0.0.1.
+func (a *App) iniciarPainel() (int, error) {
+	mux := a.rotas()
 	var escuta net.Listener
 	porta := 0
 	// ATENDENTE_PORTA troca a primeira porta tentada (para rodar uma copia de teste ao lado).
@@ -94,6 +121,8 @@ func (a *App) iniciarPainel() (int, error) {
 	}
 	a.mu.Lock()
 	a.porta = porta
+	// Cada painel tem o seu cookie: uma copia de teste em outra porta nao derruba a sessao desta.
+	a.cookie = "atendente_" + strconv.Itoa(porta)
 	a.mu.Unlock()
 	if err := os.WriteFile("porta.txt", []byte(strconv.Itoa(porta)), 0o644); err != nil {
 		log.Printf("AVISO: não gravei porta.txt: %v", err)
@@ -161,6 +190,11 @@ func (a *App) protegido(proximo http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		// Daqui para dentro, so quem esta logado e tem permissao para a rota.
+		r = a.conferirAcesso(w, r)
+		if r == nil {
+			return
+		}
 		proximo.ServeHTTP(w, r)
 	})
 }
@@ -203,6 +237,11 @@ func erroDaIA(w http.ResponseWriter, err error) {
 		return
 	}
 	log.Printf("IA: pedido do painel falhou: %v", err)
+	if aviso := avisoDoCerebro(err.Error()); aviso != "" {
+		// conectar_ia faz a página abrir a janela "Conectar a IA".
+		responderJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "erro": aviso, "conectar_ia": true})
+		return
+	}
 	msg := "A IA não conseguiu responder agora. Espere um pouco e tente de novo."
 	if strings.Contains(err.Error(), "demorou") {
 		msg = "A IA demorou demais para responder. Tente de novo, ou com um texto menor."
@@ -293,6 +332,7 @@ type leadVisao struct {
 	TotalMsgs       int               `json:"total_msgs"`
 	ProximoAgendado *agendamentoCurto `json:"proximo_agendamento"`
 	Etiquetas       []string          `json:"etiquetas"`
+	EtiquetasIA     []string          `json:"etiquetas_ia"` // as que a IA criou
 	TemFoto         bool              `json:"tem_foto"`
 	FotoVersao      string            `json:"foto_versao"`
 	Atendente       string            `json:"atendente"`
@@ -309,9 +349,10 @@ func (a *App) visaoLead(l *Lead, agora time.Time) leadVisao {
 		Decisor: l.Decisor, Prazo: l.Prazo, Pontuacao: l.Pontuacao,
 		Classificacao: ouPadrao(l.Classificacao, "indefinido"), Etapa: l.Etapa, Resumo: l.Resumo,
 		Status: ouPadrao(l.Status, statusQualificando), Motivo: l.Motivo,
-		CriadoEm: l.CriadoEm, UltimaMsg: l.UltimaMsg, TotalMsgs: len(l.Historico),
+		CriadoEm: l.CriadoEm, UltimaMsg: l.UltimaMsg, TotalMsgs: l.totalMensagens(),
 	}
 	v.Etiquetas = append([]string{}, l.Etiquetas...)
+	v.EtiquetasIA = append([]string{}, l.EtiquetasIA...)
 	v.Atendente = l.Atendente
 	if l.FotoID != "" && existeArquivo(arquivoFoto(l.ID)) {
 		v.TemFoto = true
@@ -349,6 +390,12 @@ func (a *App) rotaEstado(w http.ResponseWriter, r *http.Request) {
 	modo, erroCerebro := a.cerebro.Modo()
 	materiais := a.base.total()
 	agora := time.Now()
+	// Só o que já foi conferido: esta rota é chamada a cada 3 segundos e não pode esperar o claude.
+	var ia *situacaoIA
+	if e, pronto := a.conexao.guardado(); pronto {
+		s := a.situacaoDaIA(e)
+		ia = &s
+	}
 
 	a.mu.Lock()
 	leads := make([]leadVisao, 0, len(a.leads))
@@ -377,22 +424,24 @@ func (a *App) rotaEstado(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp := map[string]any{
-		"versao":       versao,
-		"status":       a.status,
-		"mensagem":     a.mensagem,
-		"erro":         a.erro,
-		"nome":         a.nomeConta,
-		"numero":       telefoneBonito(a.numConta),
-		"tem_qr":       a.qr != "",
-		"salvo":        a.cfg.Salvo,
-		"ligado":       a.cfg.Ligado && a.cfg.Salvo,
-		"modo":         modo,
-		"erro_cerebro": erroCerebro,
-		"modelo":       modeloDe(a.cfg),
-		"agenda_ativa": a.cfg.Agenda.Ativa,
-		"leads":        leads,
-		"contadores":   cont,
-		"etiquetas":    a.etiquetasEmUso(),
+		"versao":        versao,
+		"status":        a.status,
+		"mensagem":      a.mensagem,
+		"erro":          a.erro,
+		"nome":          a.nomeConta,
+		"numero":        telefoneBonito(a.numConta),
+		"tem_qr":        a.qr != "",
+		"salvo":         a.cfg.Salvo,
+		"ligado":        a.cfg.Ligado && a.cfg.Salvo,
+		"modo":          modo,
+		"erro_cerebro":  erroCerebro,
+		"aviso_cerebro": avisoDoCerebro(erroCerebro),
+		"ia":            ia,
+		"modelo":        modeloDe(a.cfg),
+		"agenda_ativa":  a.cfg.Agenda.Ativa,
+		"leads":         leads,
+		"contadores":    cont,
+		"etiquetas":     a.etiquetasEmUso(),
 	}
 	a.mu.Unlock()
 	responderJSON(w, http.StatusOK, resp)
@@ -416,8 +465,10 @@ func (a *App) rotaLiga(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	if p.Ligar {
 		log.Printf("PAINEL: atendente LIGADO")
+		a.registrar(usuarioDe(r), "atendente_ligado", "")
 	} else {
 		log.Printf("PAINEL: atendente PAUSADO")
+		a.registrar(usuarioDe(r), "atendente_pausado", "")
 	}
 	responderOK(w, map[string]any{"ligado": p.Ligar})
 }
@@ -441,6 +492,7 @@ func (a *App) rotaDesconectar(w http.ResponseWriter, r *http.Request) {
 		_ = cli.Store.Delete(ctx)
 	}
 	log.Printf("PAINEL: aparelho desconectado pelo painel")
+	a.registrar(usuarioDe(r), "whatsapp_desconectado", "")
 	a.definirStatus("desconectado", "Aparelho desconectado. Gerando um novo código...")
 	a.pedirTroca()
 	responderOK(w, nil)
@@ -477,7 +529,12 @@ func (a *App) rotaLead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	id := l.ID
+	var primeira int64
+	if len(v.Historico) > 0 {
+		primeira = v.Historico[0].N
+	}
 	a.mu.Unlock()
+	temAnteriores := primeira > 0 && a.banco != nil && a.banco.temAntes(id, primeira)
 	// Ao abrir a conversa, confere a foto do contato (no maximo uma vez por dia).
 	if cli := a.cliente(); cli != nil && cli.IsConnected() && cli.IsLoggedIn() {
 		go a.atualizarFoto(cli, id)
@@ -486,12 +543,35 @@ func (a *App) rotaLead(w http.ResponseWriter, r *http.Request) {
 	if ags == nil {
 		ags = []agendamentoVisao{}
 	}
-	responderOK(w, map[string]any{"lead": v, "agendamentos": ags})
+	responderOK(w, map[string]any{"lead": v, "agendamentos": ags, "tem_anteriores": temAnteriores})
+}
+
+// rotaHistorico devolve mensagens mais antigas que as que estao na tela. O painel
+// guarda so as ultimas em uso; o banco guarda todas.
+func (a *App) rotaHistorico(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	antes, err := strconv.ParseInt(r.URL.Query().Get("antes"), 10, 64)
+	a.mu.Lock()
+	existe := a.leads[id] != nil
+	a.mu.Unlock()
+	if !existe || err != nil || antes <= 0 || a.banco == nil {
+		responderErro(w, http.StatusNotFound, "Não achei essa conversa.")
+		return
+	}
+	msgs, temMais, err := a.banco.mensagensAntes(id, antes, 60)
+	if err != nil {
+		log.Printf("PAINEL: não li as mensagens antigas: %v", err)
+		responderErro(w, http.StatusInternalServerError, "Não consegui buscar as mensagens antigas. Tente de novo.")
+		return
+	}
+	if msgs == nil {
+		msgs = []Msg{}
+	}
+	responderOK(w, map[string]any{"mensagens": msgs, "tem_mais": temMais})
 }
 
 type pedidoID struct {
-	ID        string `json:"id"`
-	Atendente string `json:"atendente"`
+	ID string `json:"id"`
 }
 
 // nomeAtendente limpa o nome de quem atende. Ele fica so no historico do painel.
@@ -510,11 +590,13 @@ func (a *App) rotaRetomar(w http.ResponseWriter, r *http.Request) {
 	}
 	if l.comHumano() {
 		a.retomar(l)
-		l.evento("devolveu", ouPadrao(nomeAtendente(p.Atendente), "A equipe")+" devolveu a conversa ao assistente")
+		l.evento("devolveu", ouPadrao(nomeDe(r), "A equipe")+" devolveu a conversa ao assistente")
 		a.salvarLeads()
 	}
+	contato := l.exibir()
 	a.mu.Unlock()
 	log.Printf("PAINEL: conversa devolvida ao assistente")
+	a.registrar(usuarioDe(r), "conversa_devolvida", contato)
 	responderOK(w, nil)
 }
 
@@ -527,21 +609,25 @@ func (a *App) rotaAssumir(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		return
 	}
-	quem := nomeAtendente(p.Atendente)
-	if l.Status != statusAtendimento || (quem != "" && l.Atendente != quem) {
+	quem := nomeDe(r)
+	iniciou := l.Status != statusAtendimento || (quem != "" && l.Atendente != quem)
+	if iniciou {
 		a.iniciarAtendimento(l, quem)
 		a.salvarLeads()
 	}
+	contato := l.exibir()
 	a.mu.Unlock()
 	log.Printf("PAINEL: atendimento iniciado por uma pessoa")
+	if iniciou {
+		a.registrar(usuarioDe(r), "conversa_assumida", contato)
+	}
 	responderOK(w, nil)
 }
 
 func (a *App) rotaResponder(w http.ResponseWriter, r *http.Request) {
 	var p struct {
-		ID        string `json:"id"`
-		Texto     string `json:"texto"`
-		Atendente string `json:"atendente"`
+		ID    string `json:"id"`
+		Texto string `json:"texto"`
 	}
 	if !lerPedido(w, r, &p) {
 		return
@@ -565,7 +651,7 @@ func (a *App) rotaResponder(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusConflict, "Não consegui enviar. Confira se o WhatsApp está conectado.")
 		return
 	}
-	a.guardarRespostaDaEquipe(p.ID, Msg{De: "humano", Texto: texto, Hora: time.Now()}, p.Atendente)
+	a.guardarRespostaDaEquipe(p.ID, Msg{De: "humano", Texto: texto, Hora: time.Now()}, nomeDe(r))
 	log.Printf("PAINEL: resposta enviada por uma pessoa para %s", fimDoNumero(p.ID))
 	responderOK(w, nil)
 }
@@ -628,7 +714,7 @@ func (a *App) rotaEnviarArquivo(w http.ResponseWriter, r *http.Request) {
 		responderErro(w, http.StatusConflict, "Não consegui enviar o arquivo. Confira se o WhatsApp está conectado.")
 		return
 	}
-	a.guardarRespostaDaEquipe(id, msg, cab("X-Atendente"))
+	a.guardarRespostaDaEquipe(id, msg, nomeDe(r))
 	log.Printf("PAINEL: %s enviado por uma pessoa para %s", msg.Tipo, fimDoNumero(id))
 	responderOK(w, nil)
 }
@@ -697,11 +783,14 @@ func (a *App) rotaEtiquetas(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		return
 	}
+	antes := l.Etiquetas
 	l.Etiquetas = limparEtiquetas(p.Etiquetas)
+	l.etiquetasEditadas(antes)
 	etiquetas := append([]string{}, l.Etiquetas...)
+	daIA := append([]string{}, l.EtiquetasIA...)
 	a.salvarLeads()
 	a.mu.Unlock()
-	responderOK(w, map[string]any{"etiquetas": etiquetas})
+	responderOK(w, map[string]any{"etiquetas": etiquetas, "etiquetas_ia": daIA})
 }
 
 func (a *App) rotaRelatorio(w http.ResponseWriter, r *http.Request) {
@@ -724,12 +813,14 @@ func (a *App) rotaExcluirLead(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		return
 	}
+	contato := l.exibir()
 	apagarMidias(l)
 	delete(a.leads, p.ID)
 	delete(a.contatos, p.ID)
 	a.salvarLeads()
 	a.mu.Unlock()
 	log.Printf("PAINEL: conversa apagada")
+	a.registrar(usuarioDe(r), "conversa_apagada", contato)
 	responderOK(w, nil)
 }
 
@@ -767,15 +858,17 @@ func planilha(w http.ResponseWriter, nome string, linhas [][]string) {
 }
 
 func (a *App) rotaLeadsCSV(w http.ResponseWriter, r *http.Request) {
-	linhas := [][]string{{"Nome", "Telefone", "Classificação", "Pontuação", "Status", "Resumo", "O que precisa", "Orçamento", "Decisor", "Prazo", "Etapa", "Motivo do transbordo", "Primeira mensagem", "Última mensagem"}}
+	linhas := [][]string{{"Nome", "Telefone", "Temperatura", "Pontuação", "Situação", "Etiquetas", "Resumo", "O que precisa", "Orçamento", "Decisor", "Prazo", "Etapa", "Motivo do transbordo", "Primeira mensagem", "Última mensagem"}}
+	f := lerFiltroContatos(r)
 	a.mu.Lock()
-	for _, l := range a.leadsOrdenados() {
+	for _, l := range a.contatosFiltrados(f) {
 		linhas = append(linhas, []string{
 			celulaSegura(ouPadrao(l.Nome, l.NomeWhats)),
 			telefoneBonito(l.Telefone),
-			celulaSegura(ouPadrao(l.Classificacao, "indefinido")),
+			nomesTemperatura[ouPadrao(l.Classificacao, "indefinido")],
 			strconv.Itoa(l.Pontuacao),
-			celulaSegura(ouPadrao(l.Status, statusQualificando)),
+			nomesSituacao[situacaoDe(l)],
+			celulaSegura(strings.Join(l.Etiquetas, ", ")),
 			celulaSegura(l.Resumo),
 			celulaSegura(l.Necessidade),
 			celulaSegura(l.Orcamento),
@@ -788,6 +881,7 @@ func (a *App) rotaLeadsCSV(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	a.mu.Unlock()
+	a.registrar(usuarioDe(r), "contatos_baixados", fmt.Sprintf("Relatório completo, %d contatos", len(linhas)-1))
 	planilha(w, "leads.csv", linhas)
 }
 
@@ -831,6 +925,8 @@ func (a *App) rotaConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nova.Salvo, nova.Ligado = a.cfg.Salvo, a.cfg.Ligado
+	// Quem responde (Claude ou ChatGPT) so muda pelas rotas de conexao da IA.
+	nova.Provedor, nova.ModeloOpenAI = a.cfg.Provedor, a.cfg.ModeloOpenAI
 	// Quem recebe os avisos: vale a lista nova; o campo antigo, de um numero so, ainda e aceito.
 	var chaves map[string]json.RawMessage
 	_ = json.Unmarshal(corpo, &chaves)
@@ -863,6 +959,7 @@ func (a *App) rotaConfig(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 
 	log.Printf("PAINEL: dados salvos")
+	a.registrar(usuarioDe(r), "dados_salvos", "")
 	responderOK(w, map[string]any{"mensagem": "Salvo", "config": cfg})
 }
 
@@ -897,6 +994,7 @@ func (a *App) rotaTextos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("PAINEL: texto %s salvo", t.Chave)
+	a.registrar(usuarioDe(r), "texto_alterado", t.Chave)
 	responderOK(w, map[string]any{"mensagem": "Salvo"})
 }
 
@@ -917,6 +1015,7 @@ func (a *App) rotaRestaurarTexto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("PAINEL: texto %s voltou ao modelo original", t.Chave)
+	a.registrar(usuarioDe(r), "texto_alterado", t.Chave+" (voltou ao modelo original)")
 	responderOK(w, map[string]any{"texto": t.Modelo})
 }
 
@@ -1008,14 +1107,16 @@ func (a *App) rotaTreinar(w http.ResponseWriter, r *http.Request) {
 		Nome: p.Lead.Nome, Necessidade: p.Lead.Necessidade, Orcamento: p.Lead.Orcamento,
 		Decisor: p.Lead.Decisor, Prazo: p.Lead.Prazo, Pontuacao: limitar(int(p.Lead.Pontuacao), 0, 100),
 		Classificacao: ouPadrao(p.Lead.Classificacao, "indefinido"), Etapa: p.Lead.Etapa, Resumo: p.Lead.Resumo,
+		Etiquetas: limparEtiquetas(p.Lead.Etiquetas),
 	}
 
 	a.mu.Lock()
 	cfg := a.cfg.clonar()
+	emUso := a.etiquetasEmUso()
 	a.mu.Unlock()
 
 	sistema, trechos := a.montarSistema(cfg, consultaDaConversa(anteriores, []string{nova}), "")
-	entrada := montarEntrada(anteriores, []string{nova}, l)
+	entrada := montarEntrada(anteriores, []string{nova}, l, emUso)
 
 	a.vagas <- struct{}{}
 	inicio := time.Now()
@@ -1026,6 +1127,7 @@ func (a *App) rotaTreinar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	aplicarSaida(l, saida)
+	l.etiquetasDaIA(saida.Lead.Etiquetas, emUso)
 	if trechos == nil {
 		trechos = []Trecho{}
 	}
@@ -1034,6 +1136,7 @@ func (a *App) rotaTreinar(w http.ResponseWriter, r *http.Request) {
 		"transbordo":  saida.Transbordo || (l.Classificacao == "quente" && !cfg.Agenda.Ativa),
 		"motivo":      saida.Motivo,
 		"lead":        leadParaIA(l),
+		"etiquetas":   append([]string{}, l.Etiquetas...),
 		"agendamento": saida.Agendamento,
 		"trechos":     trechos,
 		"modo":        modo,
@@ -1134,6 +1237,7 @@ func (a *App) rotaEnviarMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("CONHECIMENTO: material novo (%s, %d trechos)", m.Tipo, len(m.Trechos))
+	a.registrar(usuarioDe(r), "material_enviado", m.Nome)
 	go a.organizarMaterial(m.ID)
 	responderOK(w, map[string]any{"material": visaoMaterial(*m)})
 }
@@ -1186,6 +1290,7 @@ func (a *App) rotaExcluirMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("CONHECIMENTO: material apagado")
+	a.registrar(usuarioDe(r), "material_removido", "")
 	responderOK(w, nil)
 }
 

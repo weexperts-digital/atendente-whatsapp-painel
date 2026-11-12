@@ -25,7 +25,9 @@ func (a *App) ajudar(sistema, entrada, esquema string, destino any) error {
 
 	inicio := time.Now()
 	bruto, _, err := a.cerebro.pedir(modeloDoAjudante(), sistema, entrada, esquema, limiteAjudante, false)
-	if err != nil && !errors.Is(err, errSemCerebro) && time.Since(inicio) < 25*time.Second && modeloDe(cfg) != modeloDoAjudante() {
+	chaveOpenAI, _ := a.cerebro.viaOpenAI()
+	if err != nil && chaveOpenAI == "" && !errors.Is(err, errSemCerebro) && avisoDoCerebro(err.Error()) == "" &&
+		time.Since(inicio) < 25*time.Second && modeloDe(cfg) != modeloDoAjudante() {
 		log.Printf("AJUDANTE: falhou com %s, tentando com %s: %v", modeloDoAjudante(), modeloDe(cfg), err)
 		bruto, _, err = a.cerebro.pedir(modeloDe(cfg), sistema, entrada, esquema, limiteAjudante, false)
 	}

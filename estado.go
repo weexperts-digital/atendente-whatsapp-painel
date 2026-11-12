@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	versao = "2.1.0"
+	versao = "2.4.0"
 
 	statusQualificando = "qualificando"
 	statusQualificado  = "qualificado"
@@ -38,6 +38,11 @@ const (
 // Tudo o que e da pessoa (dados, conversas, sessao do WhatsApp) fica em dados/.
 // Essa pasta nunca vai para o repositorio.
 const pastaDados = "dados"
+
+const (
+	provedorClaude = "claude"
+	provedorOpenAI = "openai"
+)
 
 var (
 	arqConfig         = filepath.Join(pastaDados, "config.json")
@@ -82,10 +87,14 @@ type Config struct {
 	NumerosHumanos listaNumeros `json:"numeros_humanos"`
 	NuncaResponder listaNumeros `json:"nunca_responder"`
 
-	Modelo     string `json:"modelo"`
-	AtrasoMin  int    `json:"atraso_min"` // segundos antes de responder
-	AtrasoMax  int    `json:"atraso_max"`
-	LimiteMsgs int    `json:"limite_msgs"` // mensagens por contato a cada 10 minutos
+	Modelo string `json:"modelo"`
+	// Provedor diz quem responde: "claude" (login) ou "openai" (ChatGPT, pela chave).
+	// So muda pelas rotas de conexao da IA, que conferem a chave antes.
+	Provedor     string `json:"provedor"`
+	ModeloOpenAI string `json:"modelo_openai"`
+	AtrasoMin    int    `json:"atraso_min"` // segundos antes de responder
+	AtrasoMax    int    `json:"atraso_max"`
+	LimiteMsgs   int    `json:"limite_msgs"` // mensagens por contato a cada 10 minutos
 
 	Agenda AgendaConfig `json:"agenda"`
 
@@ -230,6 +239,10 @@ func (c *Config) normalizar() {
 	if !valido {
 		c.Modelo = modeloPadrao
 	}
+	if c.Provedor != provedorOpenAI {
+		c.Provedor = provedorClaude
+	}
+	c.ModeloOpenAI = modeloOpenAILimpo(c.ModeloOpenAI)
 	if c.AtrasoMax <= 0 {
 		c.AtrasoMin, c.AtrasoMax = 3, 8
 	}
@@ -260,6 +273,7 @@ type Msg struct {
 	Tamanho int    `json:"tamanho,omitempty"`
 	Autor   string `json:"autor,omitempty"`  // quem da equipe escreveu (so aparece no painel)
 	Evento  string `json:"evento,omitempty"` // transbordo, assumiu, devolveu, agendou, cancelou
+	N       int64  `json:"n,omitempty"`      // numero da mensagem no banco (0 = ainda nao gravada)
 }
 
 // textoPlano devolve o texto da mensagem; em midia sem legenda, diz o que ela e.
@@ -301,9 +315,12 @@ type Lead struct {
 	CriadoEm      time.Time `json:"criado_em"`
 	UltimaMsg     time.Time `json:"ultima_msg"`
 	Etiquetas     []string  `json:"etiquetas"`
-	Atendente     string    `json:"atendente"` // quem da equipe esta com a conversa
-	FotoID        string    `json:"foto_id"`   // vazio = sem foto de perfil
-	FotoEm        time.Time `json:"foto_em"`   // ultima vez que a foto foi conferida
+	EtiquetasIA   []string  `json:"etiquetas_ia,omitempty"`   // as que a IA criou (as outras foram postas por uma pessoa)
+	EtiquetasFora []string  `json:"etiquetas_fora,omitempty"` // as que uma pessoa tirou: a IA nao repoe
+	Atendente     string    `json:"atendente"`                // quem da equipe esta com a conversa
+	FotoID        string    `json:"foto_id"`                  // vazio = sem foto de perfil
+	FotoEm        time.Time `json:"foto_em"`                  // ultima vez que a foto foi conferida
+	TotalMsgs     int       `json:"total_msgs"`               // mensagens trocadas desde o comeco (o historico em memoria e cortado)
 	Historico     []Msg     `json:"historico"`
 }
 
@@ -327,6 +344,10 @@ type App struct {
 	contatos map[string]*contato
 	agenda   []*Agendamento
 
+	banco  *Banco    // onde tudo fica gravado (dados/atendente.db)
+	acesso *portaria // controla as tentativas de entrada no painel
+	cookie string    // nome do cookie de sessao deste painel
+
 	cli       *whatsmeow.Client
 	container *sqlstore.Container
 	trocar    chan struct{} // pede para refazer a conexao (aparelho removido)
@@ -337,24 +358,31 @@ type App struct {
 	nomeConta string
 	numConta  string
 
-	cerebro  *Cerebro
-	base     *Base
-	vagas    chan struct{} // no maximo 3 chamadas ao cerebro ao mesmo tempo
-	ajuda    chan struct{} // no maximo 2 pedidos de ajuda (rascunhos, resumos) ao mesmo tempo
-	baixando chan struct{} // no maximo 2 midias sendo baixadas ao mesmo tempo
-	digitam  int           // quantas conversas estao com "digitando"
-	porta    int
-	iniciado time.Time
+	cerebro *Cerebro
+	conexao conexaoIA // login do Claude feito pelo painel
+	cofre   cofre     // cofre de senhas do sistema, onde fica a chave da OpenAI
+	// A chave da OpenAI fica so na memoria e no cofre do sistema, nunca em arquivo.
+	chaveOpenAI  string
+	origemOpenAI string // "cofre", "ambiente" ou vazio
+	base         *Base
+	vagas        chan struct{} // no maximo 3 chamadas ao cerebro ao mesmo tempo
+	ajuda        chan struct{} // no maximo 2 pedidos de ajuda (rascunhos, resumos) ao mesmo tempo
+	baixando     chan struct{} // no maximo 2 midias sendo baixadas ao mesmo tempo
+	digitam      int           // quantas conversas estao com "digitando"
+	porta        int
+	iniciado     time.Time
 }
 
 func novoApp() *App {
 	return &App{
 		leads:    map[string]*Lead{},
 		contatos: map[string]*contato{},
+		acesso:   novaPortaria(),
 		trocar:   make(chan struct{}, 1),
 		status:   "iniciando",
 		mensagem: "Iniciando...",
 		cerebro:  &Cerebro{},
+		cofre:    &cofreDeMemoria{}, // o main troca pelo cofre do sistema
 		base:     novaBase(),
 		vagas:    make(chan struct{}, 3),
 		ajuda:    make(chan struct{}, 2),
@@ -390,17 +418,70 @@ func migrarDadosAntigos() {
 	}
 }
 
-// carregar prepara a pasta dados/ e le o que ja existir nela.
+// carregar prepara a pasta dados/, abre o banco e le o que ja existir.
 func (a *App) carregar() {
 	for _, p := range []string{pastaDados, pastaTextos, pastaConhecimento, pastaMidia, pastaFotos} {
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			log.Printf("ERRO: não consegui criar a pasta %s: %v", p, err)
 		}
 	}
+	_ = os.Chmod(pastaDados, 0o700) // so o dono do computador le o que esta aqui
 	migrarDadosAntigos()
+
+	banco, err := abrirBanco(arqBanco)
+	if err != nil {
+		log.Fatalf("ERRO: não consegui abrir o banco de dados %s: %v", arqBanco, err)
+	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.banco = banco
+	if banco.meta("arquivos_migrados") == "" {
+		a.trazerArquivos()
+	} else {
+		a.lerDoBanco()
+	}
+	a.cfg.normalizar()
+	for _, l := range a.leads {
+		// Nada fica "pendente" de uma execucao para outra: nao respondemos mensagem velha.
+		for i := range l.Historico {
+			l.Historico[i].Pendente = false
+		}
+		if l.Status == "" {
+			l.Status = statusQualificando
+		}
+		if l.Classificacao == "" {
+			l.Classificacao = "indefinido"
+		}
+	}
+	a.base.carregar()
+}
+
+// lerDoBanco carrega dados do negocio, contatos e agenda. Chame com a.mu travado.
+func (a *App) lerDoBanco() {
+	if cfg, _, err := a.banco.lerConfig(); err != nil {
+		log.Printf("AVISO: dados do negócio com problema no banco, começando em branco: %v", err)
+	} else {
+		a.cfg = cfg
+	}
+	leads, err := a.banco.lerLeads(maxHistorico)
+	if err != nil {
+		log.Fatalf("ERRO: não consegui ler os contatos do banco de dados: %v", err)
+	}
+	for _, l := range leads {
+		a.leads[l.ID] = l
+	}
+	agenda, err := a.banco.lerAgenda()
+	if err != nil {
+		log.Fatalf("ERRO: não consegui ler a agenda do banco de dados: %v", err)
+	}
+	a.agenda = agenda
+}
+
+// trazerArquivos roda uma vez so: le os arquivos .json das versoes anteriores, grava
+// tudo no banco e deixa os arquivos guardados com o final ".migrado". Chame com
+// a.mu travado.
+func (a *App) trazerArquivos() {
 	if b, err := os.ReadFile(arqConfig); err == nil {
 		if err := json.Unmarshal(b, &a.cfg); err != nil {
 			log.Printf("AVISO: config.json com problema, ignorando: %v", err)
@@ -408,7 +489,6 @@ func (a *App) carregar() {
 		}
 	}
 	a.cfg.normalizar()
-
 	if b, err := os.ReadFile(arqLeads); err == nil {
 		var lista []*Lead
 		if err := json.Unmarshal(b, &lista); err != nil {
@@ -416,23 +496,12 @@ func (a *App) carregar() {
 			_ = os.WriteFile(arqLeads+".quebrado", b, 0o600)
 		}
 		for _, l := range lista {
-			if l == nil || l.ID == "" {
-				continue
+			if l != nil && l.ID != "" {
+				l.TotalMsgs = l.totalMensagens()
+				a.leads[l.ID] = l
 			}
-			// Nada fica "pendente" de uma execucao para outra: nao respondemos mensagem velha.
-			for i := range l.Historico {
-				l.Historico[i].Pendente = false
-			}
-			if l.Status == "" {
-				l.Status = statusQualificando
-			}
-			if l.Classificacao == "" {
-				l.Classificacao = "indefinido"
-			}
-			a.leads[l.ID] = l
 		}
 	}
-
 	if b, err := os.ReadFile(arqAgenda); err == nil {
 		var lista []*Agendamento
 		if err := json.Unmarshal(b, &lista); err != nil {
@@ -445,7 +514,37 @@ func (a *App) carregar() {
 			}
 		}
 	}
-	a.base.carregar()
+
+	// Comeca do zero no banco, para uma migracao interrompida nao deixar nada em dobro.
+	err := a.banco.limparConversas()
+	if err == nil {
+		err = a.banco.gravarConfig(a.cfg)
+	}
+	if err == nil {
+		err = a.banco.gravarLeads(a.leads)
+	}
+	if err == nil {
+		err = a.banco.gravarAgenda(a.agenda)
+	}
+	if err == nil {
+		err = a.banco.definirMeta("arquivos_migrados", horaFixa(time.Now()))
+	}
+	if err != nil {
+		log.Printf("ERRO: não consegui levar os arquivos antigos para o banco de dados. Eles continuam onde estavam e eu tento de novo na próxima vez: %v", err)
+		return
+	}
+	levados := 0
+	for _, arq := range []string{arqConfig, arqLeads, arqAgenda} {
+		if existeArquivo(arq) {
+			if err := os.Rename(arq, arq+".migrado"); err != nil {
+				log.Printf("AVISO: não renomeei %s: %v", arq, err)
+			}
+			levados++
+		}
+	}
+	if levados > 0 {
+		log.Printf("BANCO: dados antigos levados para %s (%d contatos, %d agendamentos). Os arquivos .json ficaram guardados com o final .migrado", arqBanco, len(a.leads), len(a.agenda))
+	}
 }
 
 // gravarSeguro escreve em um arquivo temporario e troca de uma vez so.
@@ -489,10 +588,34 @@ func gravarJSON(caminho string, v any) {
 	}
 }
 
-// salvarConfig, salvarLeads e salvarAgenda: chame com a.mu travado.
-func (a *App) salvarConfig() { gravarJSON(arqConfig, a.cfg) }
-func (a *App) salvarLeads()  { gravarJSON(arqLeads, a.leadsOrdenados()) }
-func (a *App) salvarAgenda() { gravarJSON(arqAgenda, a.agenda) }
+// salvarConfig, salvarLeads e salvarAgenda gravam no banco de dados. Chame com a.mu
+// travado. Sem banco aberto (nos testes) nao fazem nada.
+func (a *App) salvarConfig() {
+	if a.banco == nil {
+		return
+	}
+	if err := a.banco.gravarConfig(a.cfg); err != nil {
+		log.Printf("ERRO ao salvar os dados do negócio: %v", err)
+	}
+}
+
+func (a *App) salvarLeads() {
+	if a.banco == nil {
+		return
+	}
+	if err := a.banco.gravarLeads(a.leads); err != nil {
+		log.Printf("ERRO ao salvar as conversas: %v", err)
+	}
+}
+
+func (a *App) salvarAgenda() {
+	if a.banco == nil {
+		return
+	}
+	if err := a.banco.gravarAgenda(a.agenda); err != nil {
+		log.Printf("ERRO ao salvar a agenda: %v", err)
+	}
+}
 
 // leadsOrdenados devolve os leads, o mais recente primeiro. Chame com a.mu travado.
 func (a *App) leadsOrdenados() []*Lead {
@@ -542,6 +665,9 @@ func (a *App) contatoDe(id string) *contato {
 
 // anexar coloca uma mensagem no historico, sem deixar crescer demais.
 func (l *Lead) anexar(m Msg) {
+	if m.De != "sistema" {
+		l.TotalMsgs = l.totalMensagens() + 1
+	}
 	l.Historico = append(l.Historico, m)
 	if len(l.Historico) > maxHistorico {
 		l.Historico = append([]Msg(nil), l.Historico[len(l.Historico)-maxHistorico:]...)

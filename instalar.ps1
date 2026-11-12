@@ -35,8 +35,9 @@ if ($LASTEXITCODE -ne 0) { throw "Não consegui montar o programa." }
 if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Test-Path "$HOME\.local\bin\claude.exe")) {
     Write-Host ""
     Write-Host "Aviso: não achei o Claude Code neste computador."
-    Write-Host "O atendente vai ligar em modo teste (respostas fixas)."
-    Write-Host "Instale o Claude Code em https://claude.com/claude-code, entre na sua conta e rode ligar.ps1 de novo."
+    Write-Host "O painel abre mesmo assim. Para o assistente responder de verdade, escolha um caminho:"
+    Write-Host "  1. Instale o Claude Code em https://claude.com/claude-code e rode ligar.ps1 de novo. Depois clique em Conectar a IA no painel."
+    Write-Host "  2. Ou use o ChatGPT: no painel, em Conectar a IA, aba ChatGPT, cole uma chave da OpenAI."
 }
 
 # 5) Liga e abre o painel.

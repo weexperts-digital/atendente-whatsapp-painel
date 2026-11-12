@@ -1,0 +1,107 @@
+/* Lista suspensa (suspenso.js). Usa os tokens de app.css e vale nos dois temas.
+   Para mudar as cores em uma tela, troque as variáveis --sus-* na classe do painel. */
+
+/* ---------- Botão que abre (o lugar do antigo <select>) ---------- */
+
+.sus-gatilho {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-width: 0; max-width: 100%; min-height: 44px; padding: 0 10px 0 12px;
+  background: var(--campo); color: var(--texto);
+  border: 1px solid var(--linha-forte); border-radius: var(--raio-campo);
+  font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+.sus-gatilho:hover:not(:disabled) { border-color: var(--roxo); }
+.sus-gatilho:focus-visible { border-radius: var(--raio-campo); outline-offset: 0; border-color: var(--azul); }
+.sus-gatilho[aria-expanded="true"] {
+  border-color: var(--roxo);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--roxo) 22%, transparent);
+}
+.sus-gatilho:disabled { opacity: .55; cursor: not-allowed; }
+.sus-valor { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sus-sem-valor .sus-valor { color: var(--suave); }
+.sus-seta { width: 16px; height: 16px; color: var(--suave); transition: transform .15s ease; }
+.sus-gatilho[aria-expanded="true"] .sus-seta { transform: rotate(180deg); color: var(--texto); }
+
+/* Dentro de um campo de formulário, ocupa a largura do campo, como os outros controles. */
+.campo > .sus-gatilho { display: flex; width: 100%; max-width: 75ch; }
+
+/* Compacto: para barras de filtro. O toque continua com 40px. */
+.sus-compacto {
+  min-height: 40px; padding: 0 8px 0 12px;
+  background: var(--sup); border-color: var(--linha);
+  font-size: 13px; font-weight: 600;
+}
+
+/* ---------- Painel flutuante ---------- */
+
+.sus-painel {
+  --sus-fundo: var(--sup);
+  --sus-texto: var(--texto);
+  --sus-suave: var(--suave);
+  --sus-linha: var(--linha);
+  --sus-ativo: var(--sup2);
+  --sus-acento: var(--roxo-texto);
+
+  position: fixed; inset: auto; top: 0; left: 0; z-index: 1200;
+  display: flex; flex-direction: column;
+  width: max-content; height: auto; margin: 0; padding: 6px;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--sus-fundo); color: var(--sus-texto);
+  border: 1px solid var(--sus-linha); border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  font: 14px/1.4 var(--fonte); font-variant-numeric: tabular-nums; text-align: left;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent;
+}
+.sus-painel:focus, .sus-painel:focus-visible { outline: none; }
+/* Painel com rodapé fixo: quem rola é só a parte de cima. */
+.sus-painel:has(> .sus-rolagem) { overflow: hidden; }
+.sus-rolagem {
+  flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent;
+}
+/* Sombra discreta em cima e embaixo quando ainda há o que rolar. */
+.sus-painel:not(:has(> .sus-rolagem)), .sus-rolagem {
+  background:
+    linear-gradient(var(--sus-fundo) 40%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--sus-fundo) 60%) bottom / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--sus-texto) 22%, transparent), transparent) top / 100% 9px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--sus-texto) 22%, transparent), transparent) bottom / 100% 9px no-repeat scroll,
+    var(--sus-fundo);
+}
+
+.sus-grupo + .sus-grupo { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--sus-linha); }
+.sus-titulo { padding: 6px 10px 4px; color: var(--sus-suave); font-size: 12px; font-weight: 650; }
+
+.sus-item {
+  position: relative; flex: none;
+  display: flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 6px 10px 6px 8px;
+  border-radius: 7px; color: inherit; text-decoration: none;
+  cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.sus-item.sus-ativo { background: var(--sus-ativo); }
+.sus-item:focus { outline: none; }
+.sus-item:focus-visible { outline: 2px solid var(--azul); outline-offset: -2px; border-radius: 7px; }
+.sus-item[aria-selected="true"] .sus-texto { font-weight: 650; }
+.sus-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.sus-marca { flex: none; width: 18px; height: 18px; color: var(--sus-acento); }
+.sus-marca .ic { width: 18px; height: 18px; stroke-width: 2.25; }
+.sus-ponto { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--sus-suave); }
+.sus-ponto.sus-ponto-vazio { background: transparent; }
+.sus-textos { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sus-texto { overflow-wrap: anywhere; }
+.sus-dica { color: var(--sus-suave); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.sus-conta {
+  flex: none; min-width: 2ch; margin-left: 8px;
+  color: var(--sus-suave); font-size: 12.5px; text-align: right;
+}
+.sus-item.sus-zero .sus-texto { color: var(--sus-suave); }
+.sus-nada { padding: 10px; color: var(--sus-suave); }
+
+/* Item de menu com ícone, título e uma linha de explicação. */
+.sus-item-menu { align-items: flex-start; gap: 10px; padding: 9px 12px 9px 10px; }
+.sus-item-menu > .ic { margin-top: 1px; color: var(--sus-acento); }
+.sus-item-menu .sus-texto { font-weight: 650; }

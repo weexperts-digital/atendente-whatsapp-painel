@@ -1,0 +1,192 @@
+/* Aba Contatos (contatos.js). Usa os tokens de app.css. Os selos de situação e a foto
+   são os mesmos da aba Conversas (conversas.css). */
+
+/* A tela usa a largura toda. É ela quem diz se cabe a tabela ou se viram cartões. */
+.tela-contatos { container-type: inline-size; container-name: contatos; }
+
+.ct-total { min-height: 21px; }
+.ct-acoes { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; }
+.ct-baixar { padding: 0 12px 0 14px; }
+.ct-baixar .ct-baixar-seta { width: 16px; height: 16px; margin-left: -2px; transition: transform .15s ease; }
+.ct-baixar[aria-expanded="true"] .ct-baixar-seta { transform: rotate(180deg); }
+.ct-menu-nota {
+  margin: 6px 0 0; padding: 10px 12px 6px; border-top: 1px solid var(--sus-linha);
+  color: var(--sus-suave); font-size: 12px; line-height: 1.45;
+}
+
+/* ---------- Busca e filtros ---------- */
+
+.ct-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 14px; }
+.ct-busca { position: relative; flex: 1 1 260px; max-width: 440px; display: flex; align-items: center; }
+.ct-busca > .ic { position: absolute; left: 13px; color: var(--suave); pointer-events: none; }
+.ct-barra .ct-busca-campo {
+  width: 100%; height: 44px; min-height: 44px; padding: 0 44px 0 40px;
+  background: var(--campo); color: var(--texto);
+  border: 1px solid var(--linha-forte); border-radius: var(--raio-campo);
+  -webkit-appearance: none; appearance: none;
+  transition: border-color .15s ease;
+}
+/* Campo vazio não mostra o botão de limpar: o texto de exemplo usa esse espaço. */
+.ct-barra .ct-busca-campo:placeholder-shown { padding-right: 12px; }
+.ct-barra .ct-busca-campo:hover { border-color: var(--roxo); }
+.ct-barra .ct-busca-campo:focus-visible { outline-offset: 0; border-color: var(--azul); border-radius: var(--raio-campo); }
+.ct-barra .ct-busca-campo::-webkit-search-cancel-button { display: none; }
+.ct-busca-limpar {
+  position: absolute; right: 0; width: 44px; height: 44px; padding: 0;
+  display: grid; place-items: center;
+  background: transparent; border: 0; border-radius: var(--raio-campo); color: var(--suave); cursor: pointer;
+}
+.ct-busca-limpar:hover { color: var(--texto); }
+.ct-busca-limpar .ic { width: 16px; height: 16px; }
+
+.ct-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.ct-filtros .sus-gatilho { min-width: 172px; max-width: 230px; }
+.btn.ct-limpar { flex: none; gap: 6px; padding: 0 10px; font-size: 13px; }
+.ct-limpar .ic { width: 16px; height: 16px; }
+.btn.ct-limpar.ct-limpar-fora { visibility: hidden; }
+
+/* ---------- Tabela ---------- */
+
+.ct-corpo { transition: opacity .15s ease; }
+.ct-corpo.ct-buscando { opacity: .55; }
+
+.ct-tabela-caixa {
+  background: var(--sup); border: 1px solid var(--linha); border-radius: var(--raio);
+  box-shadow: var(--sombra-cartao);
+  /* A tabela é feita para caber. Se um dado muito comprido não couber, rola em vez de sumir. */
+  overflow-x: auto; overflow-y: hidden;
+}
+.ct-tabela { width: 100%; border-collapse: collapse; }
+.ct-tabela th {
+  padding: 10px 10px; text-align: left; vertical-align: bottom;
+  color: var(--suave); font-size: 12.5px; line-height: 1.3; font-weight: 650;
+  background: color-mix(in srgb, var(--sup2) 45%, var(--sup));
+  border-bottom: 1px solid var(--linha);
+}
+.ct-tabela td { padding: 9px 10px; vertical-align: middle; border-bottom: 1px solid var(--linha); }
+.ct-tabela th:first-child, .ct-tabela td:first-child { padding-left: 16px; }
+.ct-tabela th:last-child, .ct-tabela td:last-child { padding-right: 16px; }
+.ct-tabela tbody tr:last-child td { border-bottom: 0; }
+.ct-tabela .ct-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.ct-linha { cursor: pointer; transition: background-color .12s ease; }
+.ct-linha:hover { background: color-mix(in srgb, var(--sup2) 55%, transparent); }
+.ct-linha:focus { outline: none; }
+.ct-linha:focus-visible { outline: 2px solid var(--azul); outline-offset: -2px; border-radius: 0; background: color-mix(in srgb, var(--sup2) 55%, transparent); }
+
+.ct-quem { display: flex; align-items: center; gap: 12px; min-width: 190px; }
+.ct-quem-textos { display: flex; flex-direction: column; min-width: 0; }
+.ct-nome { font-weight: 650; overflow-wrap: anywhere; }
+.ct-apelido { color: var(--suave); font-size: 12.5px; overflow-wrap: anywhere; }
+
+.ct-fone { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ct-copiar {
+  position: relative; flex: none; width: 32px; height: 32px; padding: 0;
+  display: inline-grid; place-items: center;
+  background: transparent; border: 0; border-radius: 8px; color: var(--suave); cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+/* O toque alcança 44px mesmo com o botão pequeno. */
+.ct-copiar::after { content: ""; position: absolute; inset: -6px; }
+.ct-copiar .ic { width: 15px; height: 15px; }
+.ct-copiar:hover { background: var(--sup2); color: var(--texto); }
+.ct-copiar:focus-visible { border-radius: 8px; }
+
+.ct-temp { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ct-pontos { font-weight: 650; font-variant-numeric: tabular-nums; }
+.ct-pontos small { color: var(--suave); font-size: 12px; font-weight: 500; }
+
+.ct-tags { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.ct-tag {
+  max-width: 160px; height: 22px; padding: 0 8px; border-radius: 11px;
+  background: var(--sup2); color: var(--texto); border: 1px solid var(--linha);
+  font-size: 12px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ct-tag-mais { color: var(--suave); }
+
+.ct-c-sit .cv-selo { max-width: 190px; }
+.ct-c-sit .cv-selo > span { overflow: hidden; text-overflow: ellipsis; }
+.ct-c-data { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ct-c-data time { cursor: default; }
+.ct-linha .ct-c-data time { cursor: inherit; }
+
+.ct-mais {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 16px;
+  padding: 16px 0 0; color: var(--suave);
+}
+
+/* ---------- Menos espaço: aperta a tabela ---------- */
+
+@container contatos (max-width: 1120px) {
+  .ct-tabela { font-size: 13px; }
+  .ct-tabela th, .ct-tabela td { padding-left: 7px; padding-right: 7px; }
+  .ct-tabela th:first-child, .ct-tabela td:first-child { padding-left: 12px; }
+  .ct-tabela th:last-child, .ct-tabela td:last-child { padding-right: 12px; }
+  .ct-temp { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .ct-quem { gap: 9px; min-width: 184px; }
+  .ct-quem .cv-avatar { width: 34px; height: 34px; font-size: 12.5px; }
+  .ct-copiar { width: 26px; height: 26px; }
+  .ct-copiar::after { inset: -9px -4px; }
+  /* Os selos ficam só com a palavra, para as oito colunas caberem. */
+  .ct-tabela .etiqueta .ic, .ct-tabela .cv-selo .ic { display: none; }
+  .ct-tag { max-width: 120px; }
+}
+
+/* ---------- Pouco espaço: a tabela vira lista de cartões, sem rolar de lado ---------- */
+
+@container contatos (max-width: 999px) {
+  .ct-tabela { font-size: 14px; }
+  .ct-quem { min-width: 0; }
+  .ct-tabela-caixa { background: transparent; border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+  .ct-quem .cv-avatar { width: 40px; height: 40px; font-size: 14px; }
+  .ct-copiar { width: 32px; height: 32px; }
+  .ct-copiar::after { inset: -6px; }
+  .ct-tabela .etiqueta .ic, .ct-tabela .cv-selo .ic { display: inline; }
+  .ct-c-sit .cv-selo { max-width: 100%; }
+  .ct-tabela, .ct-tabela tbody, .ct-tabela td { display: block; }
+  .ct-tabela thead {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  .ct-tabela tbody { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+  .ct-tabela .ct-linha {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; gap: 8px 12px;
+    padding: 14px;
+    background: var(--sup); border: 1px solid var(--linha); border-radius: var(--raio);
+    box-shadow: var(--sombra-cartao);
+  }
+  .ct-tabela .ct-linha:hover { background: var(--sup); border-color: var(--roxo); }
+  .ct-tabela .ct-linha:focus-visible { outline-offset: 2px; border-radius: var(--raio); background: var(--sup); }
+  .ct-tabela td, .ct-tabela td:first-child, .ct-tabela td:last-child { padding: 0; border: 0; min-width: 0; }
+  .ct-tabela td:empty { display: none; }
+  .ct-tabela .ct-c-quem { grid-column: 1; }
+  .ct-tabela .ct-c-temp { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
+  .ct-tabela .ct-c-fone, .ct-tabela .ct-c-sit, .ct-tabela .ct-c-etqs, .ct-tabela .ct-c-data, .ct-tabela .ct-c-num { grid-column: 1 / -1; }
+  .ct-tabela .ct-c-fone { margin: -4px 0; }
+  .ct-temp { flex-direction: column; align-items: flex-end; gap: 2px; }
+  /* As três últimas colunas viram linhas "rótulo e valor". */
+  .ct-tabela td[data-rotulo] {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    font-size: 13px; text-align: right;
+  }
+  .ct-tabela td[data-rotulo]::before { content: attr(data-rotulo); color: var(--suave); text-align: left; }
+  .ct-tabela .ct-c-sit + .ct-c-etqs { margin-top: -2px; }
+  .ct-tabela td[data-rotulo="Primeiro contato"] { padding-top: 8px; border-top: 1px solid var(--linha); }
+}
+
+@container contatos (max-width: 560px) {
+  /* A busca e o botão de limpar dividem a primeira linha. Os filtros vêm embaixo, dois a dois. */
+  .ct-barra { gap: 8px; }
+  .ct-busca { order: 1; flex: 1 1 0; min-width: 0; max-width: none; }
+  .btn.ct-limpar { order: 2; width: 44px; padding: 0; }
+  .btn.ct-limpar.ct-limpar-fora { display: none; }
+  .ct-limpar span { display: none; }
+  .ct-filtros { order: 3; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ct-filtros .sus-gatilho { min-width: 0; max-width: none; width: 100%; padding: 4px 8px 4px 10px; font-size: 13px; }
+  /* Em vez de cortar o texto, o botão do filtro quebra em duas linhas. */
+  .ct-filtros .sus-valor { white-space: normal; line-height: 1.25; }
+}
+
+@media (max-width: 600px) {
+  .ct-acoes { width: 100%; justify-content: space-between; }
+}

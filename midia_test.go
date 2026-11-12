@@ -108,8 +108,8 @@ func TestRelatorioEHistorico(t *testing.T) {
 	}
 
 	// A IA nao ve as linhas internas, e midia sem legenda vira uma palavra entre colchetes.
-	entrada := montarEntrada(leads[1].Historico[:3], []string{"obrigado"}, leads[1])
-	if strings.Contains(montarEntrada(leads[0].Historico, []string{"x"}, nil), "Transferido") {
+	entrada := montarEntrada(leads[1].Historico[:3], []string{"obrigado"}, leads[1], nil)
+	if strings.Contains(montarEntrada(leads[0].Historico, []string{"x"}, nil, nil), "Transferido") {
 		t.Errorf("evento interno foi parar na conversa da IA")
 	}
 	if !strings.Contains(entrada, "Cliente: [imagem]") || !strings.Contains(entrada, "Equipe: resolvido") {

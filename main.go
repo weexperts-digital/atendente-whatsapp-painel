@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 func main() {
 	simular := flag.String("simular", "", "passa uma mensagem pelo cérebro, sem WhatsApp, e mostra o resultado")
 	mostrarVersao := flag.Bool("versao", false, "mostra a versão e sai")
+	esqueciSenha := flag.Bool("esqueci-senha", false, "abre, por alguns minutos, a tela para criar uma senha nova do super administrador")
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime)
 
@@ -32,14 +34,22 @@ func main() {
 		_ = os.Chdir(filepath.Dir(exe))
 	}
 
+	if *esqueciSenha {
+		os.Exit(abrirRedefinicao())
+	}
+
 	app := novoApp()
 	app.carregar()
+	app.cofre = novoCofreDoSistema()
+	app.carregarChaveOpenAI()
 
 	if *simular != "" {
 		os.Exit(app.simular(*simular))
 	}
 
 	_ = os.WriteFile("atendente.pid", []byte(strconv.Itoa(os.Getpid())), 0o644)
+	go app.cuidarDoBanco()
+	go app.vigiarIA()
 
 	if _, err := app.iniciarPainel(); err != nil {
 		log.Fatalf("ERRO: não consegui abrir o painel: %v", err)
@@ -60,6 +70,17 @@ func main() {
 	}
 }
 
+// cuidarDoBanco faz a copia de seguranca do dia e apaga sessoes vencidas, de hora em hora.
+func (a *App) cuidarDoBanco() {
+	for {
+		agora := time.Now()
+		a.banco.copiaDiaria(agora)
+		a.banco.limparSessoesVelhas(agora)
+		a.banco.apararRegistro(20000)
+		time.Sleep(time.Hour)
+	}
+}
+
 // simular passa uma mensagem pelo mesmo cerebro, sem WhatsApp, e imprime o resultado.
 func (a *App) simular(texto string) int {
 	a.mu.Lock()
@@ -67,7 +88,7 @@ func (a *App) simular(texto string) int {
 	a.mu.Unlock()
 
 	sistema, trechos := a.montarSistema(cfg, texto, "")
-	entrada := montarEntrada(nil, []string{texto}, nil)
+	entrada := montarEntrada(nil, []string{texto}, nil, nil)
 	saida, modo, err := a.cerebro.Responder(modeloDe(cfg), sistema, entrada, texto)
 	if err != nil {
 		fmt.Println("FALHA:", err)
@@ -75,6 +96,7 @@ func (a *App) simular(texto string) int {
 	}
 	l := &Lead{Classificacao: "indefinido"}
 	aplicarSaida(l, saida)
+	l.etiquetasDaIA(saida.Lead.Etiquetas, nil)
 	transbordo := saida.Transbordo || (l.Classificacao == "quente" && !cfg.Agenda.Ativa)
 
 	fmt.Println("CEREBRO:", modo)

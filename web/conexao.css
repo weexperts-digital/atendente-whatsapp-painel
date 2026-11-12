@@ -1,0 +1,57 @@
+/* Conexão da IA: a janela e o passo do início que ligam o Claude ao assistente. */
+
+.cx { display: flex; flex-direction: column; gap: 18px; }
+.cx-corpo { display: flex; flex-direction: column; gap: 18px; }
+.cx-abas { display: flex; align-self: stretch; }
+.cx-abas button { flex: 1; justify-content: center; gap: 8px; min-height: 40px; }
+.cx-em-uso {
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--sup2); color: var(--roxo-texto);
+  font-size: 11px; font-weight: 700;
+}
+.cx-parado > .ic { color: var(--suave); }
+.cx-chave { display: flex; flex-direction: column; gap: 12px; }
+.cx-chave .campo > input { max-width: none; font-family: var(--mono); min-height: 48px; }
+.cx-corpo > .campo > *:not(label):not(.ajuda) { max-width: none; }
+.cx-passos a { color: var(--roxo-texto); font-weight: 600; text-underline-offset: 3px; }
+.cx-janela { width: min(520px, calc(100vw - 32px)); }
+.cx-passos { max-width: none; gap: 12px; font-size: 15px; line-height: 1.45; }
+.cx .acoes .btn-grande { width: 100%; justify-content: center; }
+.cx-corpo > .ajuda { font-size: 13px; }
+
+.cx-estado {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px; border-radius: var(--raio);
+  background: var(--sup2);
+}
+.cx-estado strong { display: block; line-height: 1.35; }
+.cx-estado p { margin-top: 2px; color: var(--suave); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.cx-estado > .ic { width: 24px; height: 24px; flex: none; margin-top: 1px; }
+.cx-estado > .rodando { flex: none; margin-top: 3px; }
+.cx-ok > .ic { color: var(--ok); }
+.cx-falta > .ic { color: var(--perigo); }
+
+.cx-reserva { border-top: 1px solid var(--linha); padding-top: 12px; }
+.cx-reserva summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 6px; }
+.cx-reserva summary:hover { color: var(--roxo-texto); }
+.cx-reserva > .pilha { margin-top: 10px; gap: 12px; }
+.cx-reserva .ajuda { font-size: 13px; }
+.cx-codigo { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.cx-codigo .campo > input { max-width: none; font-family: var(--mono); }
+
+/* A faixa de aviso do topo ganha um botão para resolver na hora. */
+.faixa > div { flex: 1; min-width: 0; }
+.faixa-acao { flex: none; align-self: center; }
+
+/* Linha da conexão dentro de Ajustes. */
+.cx-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cx-linha .cx-situacao { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.cx-ponto { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--morno); }
+.cx-ponto[data-estado="ok"] { background: var(--verde); }
+.cx-ponto[data-estado="fora"] { background: var(--perigo); }
+
+@media (max-width: 520px) {
+  .cx-codigo { grid-template-columns: minmax(0, 1fr); }
+  .faixa { flex-wrap: wrap; }
+  .faixa-acao { margin-left: 30px; }
+}

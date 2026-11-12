@@ -124,21 +124,26 @@
     const nomeLimpo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     const pintarExtras = () => {
       trocar(extras, n.extras.map((x, i) => {
-        const mostra = h('p', { class: 'extra-chave', text: x.nome ? '{{' + nomeLimpo(x.nome) + '}}' : '' });
-        const nome = entrada(x, 'nome', { placeholder: 'Ex.: ESTACIONAMENTO', autocomplete: 'off' }, () => {
-          mostra.textContent = x.nome ? '{{' + nomeLimpo(x.nome) + '}}' : '';
-          sujar();
-        });
+        // A dica fica em uma linha própria, embaixo dos dois campos, para não desalinhar
+        // o Nome do Valor.
+        const chave = h('code');
+        const mostra = h('p', { class: 'extra-chave' }, 'Nos textos, escreva ', chave);
+        const pintarChave = () => {
+          const limpo = nomeLimpo(x.nome);
+          chave.textContent = limpo ? '{{' + limpo + '}}' : '';
+          mostra.hidden = !limpo;
+        };
+        pintarChave();
+        const nome = entrada(x, 'nome', { placeholder: 'Ex.: ESTACIONAMENTO', autocomplete: 'off' }, () => { pintarChave(); sujar(); });
         nome.addEventListener('blur', () => { x.nome = nomeLimpo(x.nome); nome.value = x.nome; });
-        const campoNome = campo('Nome', nome);
-        campoNome.appendChild(mostra);
         return h('div', { class: 'linha-extra' },
-          campoNome,
+          h('div', { class: 'campo-nome' }, campo('Nome', nome)),
           h('div', { class: 'campo-valor' }, campo('Valor', entrada(x, 'valor', { placeholder: 'Ex.: Gratuito na rua ao lado', autocomplete: 'off' }, sujar))),
           botao('', {
             icone: 'lixo', classe: 'btn-icone', rotulo: 'Remover a variável ' + (x.nome || (i + 1)),
             aoClicar: () => { n.extras.splice(i, 1); sujar(); pintarExtras(); },
-          }));
+          }),
+          mostra);
       }));
     };
     pintarExtras();

@@ -1,5 +1,5 @@
 'use strict';
-// Aba Conversas: lista com filtros, conversa com cara de WhatsApp e ficha do lead.
+// Aba Conversas: lista com busca e um filtro só, conversa com cara de WhatsApp e ficha do lead.
 //
 // A casca (app.js) busca /api/estado a cada 3 segundos e chama atualizar(). Aqui nada é
 // recriado sem precisar: só entra na página o que mudou. Assim não se perde o texto
@@ -12,7 +12,6 @@
   const MAX_ANEXOS = 10;
   const MAX_LEGENDA = 1000;
   const LARGURA_GAVETA = 1040; // com menos espaço que isso, a ficha vira painel deslizante
-  const CHAVE_NOME = 'atendente.nome';
   const CHAVE_FICHA = 'conversas.ficha';
   // O WhatsApp toca bem ogg/opus (vira mensagem de voz) e mp4 com AAC. O mp4 com opus,
   // que o Chrome escolhe sozinho, não toca em todo celular: por isso o AAC vem antes.
@@ -25,11 +24,12 @@
   const itens = new Map();      // id do lead -> peças do item da lista
   const rascunhos = new Map();  // id do lead -> { texto, anexos } (não se perde ao trocar de conversa)
   let busca = '';
+  // O filtro tem três grupos que combinam entre si. A situação mora em S.filtro
+  // ('todas', 'fila', 'atendimento' ou 'assistente'); a temperatura e a etiqueta ficam aqui.
+  let tempFiltro = '';
   let etiquetaFiltro = '';
   let gravacao = null;          // gravação de voz em andamento
   let visor = null;             // janela da imagem ampliada
-  let dialogoNome = null;
-  let nomeNaMemoria = '';
   let buscaEmCurso = null;
   let buscaEsperando = null;
 
@@ -43,6 +43,7 @@
     video: [['path', { d: 'm16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 10.5' }], ['rect', { x: 2, y: 6, width: 14, height: 12, rx: 2 }]],
     copiar: [['rect', { x: 8, y: 8, width: 14, height: 14, rx: 2 }], ['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }]],
     etiqueta: [['path', { d: 'M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4Z' }], ['path', { d: 'M7.5 7.5h.01' }]],
+    filtro: [['path', { d: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z' }]],
     painel: [['rect', { x: 3, y: 3, width: 18, height: 18, rx: 2 }], ['path', { d: 'M15 3v18' }]],
     descer: [['path', { d: 'M12 5v14M19 12l-7 7-7-7' }]],
     fone: [['path', { d: 'M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3' }]],
@@ -75,13 +76,18 @@
   const emAtendimento = (l) => l.status === 'em atendimento';
   const situacaoDe = (l) => (naFila(l) ? 'fila' : (emAtendimento(l) ? 'atendimento' : 'ia'));
 
-  const FILTROS = [
-    { id: 'fila', rotulo: 'Na fila', passa: naFila, contador: 'aguardando', destaque: true },
-    { id: 'atendimento', rotulo: 'Em atendimento', passa: emAtendimento, contador: 'em_atendimento' },
-    { id: 'quente', rotulo: 'Quentes', passa: (l) => l.classificacao === 'quente', contador: 'quentes', temp: 'quente' },
-    { id: 'morno', rotulo: 'Mornos', passa: (l) => l.classificacao === 'morno', contador: 'mornos', temp: 'morno' },
-    { id: 'frio', rotulo: 'Frios', passa: (l) => l.classificacao === 'frio', contador: 'frios', temp: 'frio' },
-    { id: 'todas', rotulo: 'Todas', passa: () => true, contador: 'conversas' },
+  // Os três grupos do filtro. Em cada um vale uma escolha só; id vazio quer dizer "todas".
+  const SITUACOES = [
+    { id: '', rotulo: 'Todas' },
+    { id: 'fila', rotulo: 'Na fila' },
+    { id: 'atendimento', rotulo: 'Em atendimento' },
+    { id: 'assistente', rotulo: 'Com o assistente' },
+  ];
+  const TEMPERATURAS_FILTRO = [
+    { id: '', rotulo: 'Todas' },
+    { id: 'quente', rotulo: 'Quentes', cor: 'var(--quente)' },
+    { id: 'morno', rotulo: 'Mornos', cor: 'var(--morno)' },
+    { id: 'frio', rotulo: 'Frios', cor: 'var(--frio)' },
   ];
 
   const MIDIAS = {
@@ -104,8 +110,8 @@
   function ler(chave) { try { return localStorage.getItem(chave); } catch (e) { return null; } }
   function gravar(chave, valor) { try { localStorage.setItem(chave, valor); } catch (e) { /* sem armazenamento */ } }
 
-  function nomeAtendente() { return String(ler(CHAVE_NOME) || nomeNaMemoria || '').trim(); }
-  function guardarNome(nome) { nomeNaMemoria = nome; gravar(CHAVE_NOME, nome); }
+  // euMesmo diz o nome de quem está usando o painel (vem do login). Vazio se ninguém entrou.
+  function euMesmo() { return SESSAO.usuario ? String(SESSAO.usuario.nome || '').trim() : ''; }
 
   // mudou só roda "fazer" quando o valor é diferente do que já está na tela.
   function mudou(dono, chave, valor, fazer) {
@@ -210,48 +216,6 @@
     return el;
   }
 
-  // ---------- Nome de quem atende ----------
-
-  // pedirNome pergunta o nome e guarda neste navegador. Devolve o nome, ou null se a pessoa desistiu.
-  function pedirNome(atual) {
-    return new Promise((resolver) => {
-      if (dialogoNome) { resolver(null); return; }
-      const campoNome = h('input', {
-        type: 'text', id: 'cv-nome-atendente', maxLength: 40, autocomplete: 'off',
-        placeholder: 'Ex.: Oliveira', value: atual || '',
-      });
-      const erro = h('p', { class: 'cv-dlg-erro', role: 'alert', hidden: true, text: 'Escreva o seu nome para continuar.' });
-      const form = h('form', { method: 'dialog', novalidate: true },
-        h('h2', { id: 'cv-dlg-nome-titulo', text: 'Como você se chama?' }),
-        h('p', { text: 'Seu nome fica só aqui no painel, para a equipe saber quem atendeu. O cliente não vê.' }),
-        h('div', { class: 'campo cv-dlg-campo' }, h('label', { htmlFor: 'cv-nome-atendente', text: 'Seu nome' }), campoNome, erro));
-      const dlg = h('dialog', { class: 'dialogo cv-dlg-nome', 'aria-labelledby': 'cv-dlg-nome-titulo' }, form);
-      form.appendChild(h('div', { class: 'dialogo-acoes' },
-        h('button', { type: 'button', class: 'btn btn-suave', onclick: () => dlg.close() }, 'Cancelar'),
-        h('button', { type: 'submit', class: 'btn btn-primario' }, atual ? 'Guardar nome' : 'Guardar e continuar')));
-      let nome = null;
-      form.addEventListener('submit', (ev) => {
-        ev.preventDefault();
-        const valor = campoNome.value.trim().replace(/\s+/g, ' ');
-        if (!valor) { erro.hidden = false; campoNome.focus(); return; }
-        nome = valor;
-        guardarNome(valor);
-        dlg.close();
-      });
-      dlg.addEventListener('close', () => {
-        dlg.remove();
-        dialogoNome = null;
-        resolver(nome);
-      });
-      document.body.appendChild(dlg);
-      dialogoNome = dlg;
-      if (typeof abrirDialogo === 'function') abrirDialogo(dlg);
-      else dlg.showModal();
-      campoNome.focus();
-      campoNome.select();
-    });
-  }
-
   // ---------- Ações da fila ----------
 
   async function atualizarTudo() {
@@ -259,23 +223,16 @@
     await buscarLead();
   }
 
+  // O programa sabe quem está atendendo pelo login. A página não manda nome nenhum.
   async function iniciarAtendimento(id) {
-    let nome = nomeAtendente();
-    if (!nome) {
-      nome = await pedirNome('');
-      if (!nome) return;
-    }
-    await api.post('/api/assumir', { id, atendente: nome });
+    await api.post('/api/assumir', { id });
     toast('Atendimento iniciado. Agora é você quem responde esta conversa.');
     await atualizarTudo();
     if (painel && painel.id === id && painel.pode) painel.texto.focus();
   }
 
   async function encerrarAtendimento(id) {
-    const corpo = { id };
-    const nome = nomeAtendente();
-    if (nome) corpo.atendente = nome;
-    await api.post('/api/retomar', corpo);
+    await api.post('/api/retomar', { id });
     toast('Atendimento encerrado. O assistente voltou a responder esta conversa.');
     await atualizarTudo();
   }
@@ -284,8 +241,18 @@
 
   function prefFicha() { return ler(CHAVE_FICHA) !== '0'; }
 
-  function montar(main) {
-    if (!FILTROS.some((f) => f.id === S.filtro)) S.filtro = S.filtro === 'aguardando' ? 'fila' : 'todas';
+  function montar(main, sub) {
+    // S.filtro guarda a situação escolhida. Valores antigos (de quando havia uma fileira
+    // de botões) continuam valendo: a temperatura passa para o grupo dela.
+    if (S.filtro === 'aguardando') S.filtro = 'fila';
+    if (TEMPERATURAS_FILTRO.some((t) => t.id && t.id === S.filtro)) { tempFiltro = S.filtro; S.filtro = 'todas'; }
+    if (!SITUACOES.some((x) => x.id && x.id === S.filtro)) S.filtro = 'todas';
+    // "#conversas/<id>" abre direto a conversa da pessoa (a aba Contatos chega assim).
+    if (sub) {
+      try { S.aberto = decodeURIComponent(sub); } catch (e) { S.aberto = sub; }
+      S.lead = null;
+      try { history.replaceState(null, '', '#conversas'); } catch (e) { /* o endereço fica como está */ }
+    }
 
     const campoBusca = h('input', {
       type: 'search', class: 'cv-busca-campo', placeholder: 'Buscar por nome ou telefone',
@@ -297,28 +264,23 @@
     }, icone('fechar'));
     campoBusca.addEventListener('input', () => definirBusca(campoBusca.value));
 
-    // Três linhas fixas: quem precisa de gente, temperatura e, por fim, todas e etiquetas.
-    const filtros = {};
-    const grupoFiltros = h('div', { class: 'cv-filtros', role: 'group', 'aria-label': 'Filtrar conversas' });
-    const linhasDeFiltro = [['fila', 'atendimento'], ['quente', 'morno', 'frio'], ['todas']].map((ids) => {
-      const linha = h('div', { class: 'cv-filtros-linha' });
-      for (const f of FILTROS.filter((x) => ids.includes(x.id))) {
-        const conta = h('span', { class: 'cv-filtro-conta', text: '0' });
-        const b = h('button', {
-          type: 'button', class: 'cv-filtro' + (f.destaque ? ' cv-filtro-destaque' : ''), 'data-temp': f.temp,
-          'aria-pressed': S.filtro === f.id ? 'true' : 'false',
-          onclick: () => definirFiltro(f.id),
-        }, f.temp ? h('span', { class: 'cv-filtro-ponto' }) : null, h('span', { text: f.rotulo }), conta);
-        filtros[f.id] = { b, conta };
-        linha.appendChild(b);
-      }
-      grupoFiltros.appendChild(linha);
-      return linha;
+    // Um filtro só: o botão diz o que está valendo e abre o painel com os três grupos.
+    const resumoFiltro = h('span', { class: 'cv-filtrar-texto' });
+    const botaoFiltro = h('button', { type: 'button', class: 'cv-filtrar' },
+      ic('filtro'), resumoFiltro, icone('seta-baixo', 'cv-filtrar-seta'));
+    const limparFiltro = h('button', {
+      type: 'button', class: 'cv-filtrar-limpar', 'aria-label': 'Limpar filtros', title: 'Limpar filtros', hidden: true,
+      onclick: () => { limparFiltros(); botaoFiltro.focus(); },
+    }, icone('fechar'));
+    const caixaFiltro = h('div', { class: 'cv-filtro-caixa' }, botaoFiltro, limparFiltro);
+    const filtro = suspenso(botaoFiltro, montarPainelFiltro, {
+      papel: 'dialog', classe: 'cv-sus', largura: 'gatilho', altura: 720, ancora: caixaFiltro,
+      aoFechar: () => { if (tela) tela.painelFiltro = null; },
     });
-    const seletorEtq = h('select', { class: 'cv-etq-filtro', 'aria-label': 'Filtrar por etiqueta' });
-    seletorEtq.addEventListener('change', () => { etiquetaFiltro = seletorEtq.value; pintarSeletor(); pintarLista(); });
-    const caixaEtq = h('label', { class: 'cv-etq-caixa', hidden: true }, ic('etiqueta'), seletorEtq);
-    linhasDeFiltro[linhasDeFiltro.length - 1].appendChild(caixaEtq);
+    // A fila é o que mais importa: quando tem gente esperando, o aviso fica sempre à vista.
+    const textoFila = h('strong');
+    const avisoFila = h('button', { type: 'button', class: 'cv-aviso-fila', hidden: true, onclick: verFila },
+      icone('relogio'), textoFila, h('span', { class: 'cv-aviso-fila-ver' }, 'Ver', icone('seta-dir')));
 
     const lista = h('div', { class: 'cv-itens', role: 'group', 'aria-label': 'Lista de conversas' });
     const colunaLista = h('section', { class: 'cv-lista cv-wa', 'aria-label': 'Conversas' },
@@ -326,7 +288,8 @@
         h('h1', { text: 'Conversas' }),
         h('a', { class: 'cv-baixar', href: '/leads.csv', download: 'leads.csv' }, icone('baixar'), h('span', { text: 'Baixar planilha de leads' }))),
       h('div', { class: 'cv-busca' }, ic('busca'), campoBusca, limparBusca),
-      grupoFiltros, lista);
+      h('div', { class: 'cv-filtro-linha' }, caixaFiltro),
+      avisoFila, lista);
 
     const chat = h('section', { class: 'cv-chat cv-wa', 'aria-label': 'Conversa aberta' });
     const ficha = h('aside', { class: 'cv-ficha', id: 'cv-ficha', 'aria-label': 'Detalhes do cliente' });
@@ -335,7 +298,8 @@
     main.appendChild(raiz);
 
     tela = {
-      raiz, lista, chat, ficha, veu, filtros, campoBusca, limparBusca, seletorEtq, caixaEtq,
+      raiz, lista, chat, ficha, veu, campoBusca, limparBusca,
+      filtro, botaoFiltro, resumoFiltro, limparFiltro, avisoFila, textoFila, painelFiltro: null,
       marcas: {}, marcaNota: null, marcaVazio: null, gaveta: false, fichaAberta: false, vezFicha: 0, topo: -1,
       arrastes: 0, observador: null,
     };
@@ -355,6 +319,7 @@
     definirFicha(tela.gaveta ? false : prefFicha(), { direto: true });
 
     if (!S.estado) trocar(lista, carregandoEl('Carregando conversas...'));
+    pintarFiltros();
     pintarSemConversa();
     atualizar();
   }
@@ -367,7 +332,7 @@
     }
     soltarPainel();
     if (visor) { if (visor.dlg.open) visor.dlg.close(); visor.dlg.remove(); visor = null; }
-    if (dialogoNome && dialogoNome.open) dialogoNome.close();
+    if (tela && tela.filtro) tela.filtro.fechar();
     tela = null;
     itens.clear();
   }
@@ -451,10 +416,35 @@
 
   // ---------- Filtros, busca e lista ----------
 
-  function definirFiltro(id) {
-    S.filtro = id;
+  function filtroAtual() {
+    return { situacao: S.filtro === 'todas' ? '' : S.filtro, temp: tempFiltro, etiqueta: etiquetaFiltro };
+  }
+
+  function temFiltro() { return S.filtro !== 'todas' || !!tempFiltro || !!etiquetaFiltro; }
+
+  // definirFiltro troca a escolha de um grupo: 'situacao', 'temp' ou 'etiqueta'. Vazio é "todas".
+  function definirFiltro(grupo, id) {
+    if (grupo === 'situacao') S.filtro = id || 'todas';
+    else if (grupo === 'temp') tempFiltro = id || '';
+    else etiquetaFiltro = id || '';
     pintarFiltros();
     pintarLista();
+  }
+
+  function limparFiltros() {
+    S.filtro = 'todas';
+    tempFiltro = '';
+    etiquetaFiltro = '';
+    pintarFiltros();
+    pintarLista();
+  }
+
+  // verFila mostra só quem está esperando uma pessoa, sem mais nada no caminho.
+  function verFila() {
+    S.filtro = 'fila';
+    tempFiltro = '';
+    etiquetaFiltro = '';
+    definirBusca('');
   }
 
   function definirBusca(valor) {
@@ -463,6 +453,7 @@
       if (tela.campoBusca.value !== valor) tela.campoBusca.value = valor;
       tela.limparBusca.hidden = !valor;
     }
+    pintarFiltros();
     pintarLista();
   }
 
@@ -473,45 +464,127 @@
     return Array.from(todas).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }
 
-  function pintarFiltros() {
-    if (!tela) return;
-    const c = (S.estado && S.estado.contadores) || {};
-    for (const f of FILTROS) {
-      const peca = tela.filtros[f.id];
-      const n = typeof c[f.contador] === 'number' ? c[f.contador] : leads().filter(f.passa).length;
-      const texto = String(n);
-      if (peca.conta.textContent !== texto) peca.conta.textContent = texto;
-      peca.b.classList.toggle('tem', n > 0);
-      peca.b.setAttribute('aria-pressed', S.filtro === f.id ? 'true' : 'false');
-    }
+  function passaFiltro(l, f) {
+    if (f.situacao && (situacaoDe(l) === 'ia' ? 'assistente' : situacaoDe(l)) !== f.situacao) return false;
+    if (f.temp && temperatura(l.classificacao) !== f.temp) return false;
+    if (f.etiqueta && !(l.etiquetas || []).map(String).includes(f.etiqueta)) return false;
+    return true;
   }
 
-  function pintarSeletor() {
+  // filtroDaBusca devolve a função que diz se o lead bate com o texto digitado.
+  function filtroDaBusca() {
+    const termo = semAcento(busca.trim());
+    const digitos = busca.replace(/\D/g, '');
+    if (!termo) return () => true;
+    return (l) => {
+      const nomes = semAcento([l.exibir, l.nome, l.nome_whatsapp, l.telefone_bonito].filter(Boolean).join(' '));
+      if (nomes.includes(termo)) return true;
+      return digitos.length >= 2 && String(l.telefone || '').replace(/\D/g, '').includes(digitos);
+    };
+  }
+
+  // resumoDoFiltro diz em poucas palavras o que está valendo: "Na fila, Quentes".
+  function resumoDoFiltro() {
+    const f = filtroAtual();
+    const partes = [];
+    const situacao = SITUACOES.find((x) => x.id === f.situacao);
+    if (f.situacao && situacao) partes.push(situacao.rotulo);
+    const temp = TEMPERATURAS_FILTRO.find((x) => x.id === f.temp);
+    if (f.temp && temp) partes.push(temp.rotulo);
+    if (f.etiqueta) partes.push(f.etiqueta);
+    return partes.join(', ');
+  }
+
+  function pintarFiltros() {
     if (!tela) return;
-    const lista = etiquetasEmUso();
-    if (etiquetaFiltro && !lista.includes(etiquetaFiltro)) etiquetaFiltro = '';
-    mudou(tela, 'etiquetas', lista.join('\n'), () => {
-      trocar(tela.seletorEtq, h('option', { value: '', text: 'Todas as etiquetas' }),
-        lista.map((e) => h('option', { value: e, text: e })));
+    if (etiquetaFiltro && S.estado && !etiquetasEmUso().includes(etiquetaFiltro)) etiquetaFiltro = '';
+    const resumo = resumoDoFiltro();
+    const ativo = !!resumo;
+    mudou(tela, 'resumo', resumo, () => {
+      tela.resumoFiltro.textContent = resumo || 'Todas as conversas';
+      tela.botaoFiltro.classList.toggle('ativo', ativo);
+      tela.botaoFiltro.setAttribute('aria-label', 'Filtrar conversas. ' + (resumo ? 'Mostrando: ' + resumo : 'Mostrando todas as conversas'));
+      tela.botaoFiltro.title = resumo ? 'Filtro: ' + resumo : 'Filtrar conversas';
+      tela.limparFiltro.hidden = !ativo;
     });
-    if (tela.seletorEtq.value !== etiquetaFiltro) tela.seletorEtq.value = etiquetaFiltro;
-    tela.caixaEtq.hidden = !lista.length;
-    tela.caixaEtq.classList.toggle('ativo', !!etiquetaFiltro);
+    const esperando = leads().filter(naFila).length;
+    mudou(tela, 'fila', String(esperando), () => {
+      const estava = tela.avisoFila.hidden;
+      tela.avisoFila.hidden = !esperando;
+      tela.textoFila.textContent = esperando + ' na fila';
+      tela.avisoFila.setAttribute('aria-label', (esperando === 1 ? '1 conversa na fila' : esperando + ' conversas na fila') + '. Ver só a fila');
+      if (esperando && estava && tela.marcas.filaPintada) mover(tela.avisoFila, { opacity: [0, 1], y: [-6, 0] }, { duration: 0.2 });
+      tela.marcas.filaPintada = true;
+    });
+    if (tela.painelFiltro) tela.painelFiltro.pintar();
+  }
+
+  // montarPainelFiltro preenche o painel do filtro: três grupos, uma escolha em cada um.
+  // Cada opção mostra quantas conversas tem, no total. O botão do rodapé diz quantas
+  // sobram com tudo junto (os três grupos e a busca).
+  function montarPainelFiltro(painelEl, fecharPainel) {
+    painelEl.setAttribute('role', 'dialog');
+    painelEl.setAttribute('aria-label', 'Filtrar conversas');
+    const caixa = h('div', { class: 'sus-rolagem', role: 'listbox', 'aria-label': 'Filtros', 'aria-multiselectable': 'true' });
+    const limpar = h('button', {
+      type: 'button', class: 'btn cv-btn-linha', tabIndex: -1, 'aria-label': 'Limpar filtros',
+      onclick: () => { limparFiltros(); },
+    }, 'Limpar');
+    const textoVer = h('span');
+    const ver = h('button', { type: 'button', class: 'btn cv-btn-verde', tabIndex: -1, onclick: () => fecharPainel(true) }, textoVer);
+    let pecas = [];
+    let marcaEtiquetas = null;
+
+    function grupo(chave, titulo, opcoes) {
+      const el = h('div', { class: 'sus-grupo', role: 'group', 'aria-label': titulo },
+        h('div', { class: 'sus-titulo', 'aria-hidden': 'true', text: titulo }));
+      const comCor = opcoes.some((o) => o.cor);
+      for (const o of opcoes) {
+        const item = susItem({ texto: o.rotulo, cor: o.cor }, { role: 'option' }, comCor);
+        item.el.addEventListener('click', () => definirFiltro(chave, o.id));
+        pecas.push({ chave, id: o.id, item });
+        el.appendChild(item.el);
+      }
+      return el;
+    }
+
+    function construir() {
+      const etiquetas = etiquetasEmUso();
+      marcaEtiquetas = etiquetas.join('\n');
+      pecas = [];
+      trocar(caixa,
+        grupo('situacao', 'Situação', SITUACOES),
+        grupo('temp', 'Temperatura', TEMPERATURAS_FILTRO),
+        grupo('etiqueta', 'Etiquetas', [{ id: '', rotulo: 'Todas' }].concat(etiquetas.map((e) => ({ id: e, rotulo: e })))));
+    }
+
+    function pintar() {
+      if (marcaEtiquetas !== etiquetasEmUso().join('\n')) {
+        // Apareceu ou sumiu uma etiqueta: a lista é refeita e o item ativo se mantém.
+        if (marcaEtiquetas === null) construir();
+        else { tela.filtro.refazer(); return; }
+      }
+      const f = filtroAtual();
+      const todos = leads();
+      for (const p of pecas) {
+        const so = { situacao: '', temp: '', etiqueta: '' };
+        so[p.chave] = p.id;
+        p.item.marcar(f[p.chave] === p.id);
+        p.item.contar(todos.filter((l) => passaFiltro(l, so)).length);
+      }
+      const n = leadsVisiveis().length;
+      textoVer.textContent = n === 0 ? 'Nenhuma conversa' : (n === 1 ? 'Ver 1 conversa' : 'Ver ' + n + ' conversas');
+      limpar.hidden = !temFiltro();
+    }
+
+    painelEl.append(caixa, h('div', { class: 'cv-sus-pe' }, limpar, ver));
+    tela.painelFiltro = { pintar };
+    pintar();
   }
 
   function leadsVisiveis() {
-    const filtro = FILTROS.find((f) => f.id === S.filtro) || FILTROS[FILTROS.length - 1];
-    const termo = semAcento(busca.trim());
-    const digitos = busca.replace(/\D/g, '');
-    let lista = leads().filter(filtro.passa);
-    if (etiquetaFiltro) lista = lista.filter((l) => (l.etiquetas || []).includes(etiquetaFiltro));
-    if (termo) {
-      lista = lista.filter((l) => {
-        const nomes = semAcento([l.exibir, l.nome, l.nome_whatsapp, l.telefone_bonito].filter(Boolean).join(' '));
-        if (nomes.includes(termo)) return true;
-        return digitos.length >= 2 && String(l.telefone || '').replace(/\D/g, '').includes(digitos);
-      });
-    }
+    const f = filtroAtual();
+    const lista = leads().filter(filtroDaBusca()).filter((l) => passaFiltro(l, f));
     // Quem está na fila vem primeiro. O resto segue a ordem da API (mais recente antes).
     return lista.filter(naFila).concat(lista.filter((l) => !naFila(l)));
   }
@@ -627,16 +700,18 @@
       if (!vivos.has(id)) { p.el.remove(); itens.delete(id); }
     }
     if (!ordem.length) {
-      const filtrando = S.filtro !== 'todas' || !!etiquetaFiltro || !!busca.trim();
-      const marca = [S.filtro, etiquetaFiltro, busca.trim()].join('|');
+      const filtrando = temFiltro() || !!busca.trim();
+      const marca = [S.filtro, tempFiltro, etiquetaFiltro, busca.trim()].join('|');
       if (tela.marcaNota !== marca) {
         tela.marcaNota = marca;
-        const texto = busca.trim() ? 'Nada encontrado para "' + cortarTexto(busca.trim(), 40) + '".' : 'Nenhuma conversa aqui agora.';
+        const texto = busca.trim()
+          ? 'Nada encontrado para "' + cortarTexto(busca.trim(), 40) + '"' + (temFiltro() ? ' com esse filtro.' : '.')
+          : (temFiltro() ? 'Nenhuma conversa com esse filtro.' : 'Nenhuma conversa aqui agora.');
         trocar(tela.lista, h('div', { class: 'cv-nota' },
           h('p', { text: texto }),
           filtrando ? h('button', {
             type: 'button', class: 'btn cv-btn-linha',
-            onclick: () => { etiquetaFiltro = ''; S.filtro = 'todas'; definirBusca(''); pintarFiltros(); pintarSeletor(); },
+            onclick: () => { S.filtro = 'todas'; tempFiltro = ''; etiquetaFiltro = ''; definirBusca(''); if (tela) tela.botaoFiltro.focus(); },
           }, 'Ver todas as conversas') : null));
       }
       return;
@@ -653,7 +728,6 @@
     medir();
     if (!S.estado) return;
     pintarFiltros();
-    pintarSeletor();
 
     const semLeads = leads().length === 0;
     tela.raiz.classList.toggle('cv-sem-leads', semLeads);
@@ -742,7 +816,7 @@
 
   function montarConversa(id) {
     const r = rascunho(id);
-    const p = { id, marcas: {}, nos: new Map(), pintou: false, noFim: true, irAoFim: false, novas: 0, enviando: false, pode: false, situacao: 'ia' };
+    const p = { id, marcas: {}, nos: new Map(), vistas: new Map(), temAnteriores: null, pintou: false, noFim: true, irAoFim: false, novas: 0, enviando: false, pode: false, situacao: 'ia' };
 
     // Cabeçalho
     p.foto = h('span', { class: 'cv-cab-foto' });
@@ -850,6 +924,8 @@
     if (!tela || painel !== p || S.aberto !== id || !r || !r.lead) return;
     S.lead = r.lead;
     S.agendamentosLead = r.agendamentos || [];
+    // Só a primeira resposta diz se existe conversa mais antiga; depois vale o que já foi buscado.
+    if (p.temAnteriores === null) p.temAnteriores = !!r.tem_anteriores;
     pintarTopo(r.lead);
     pintarMensagens(r.lead.historico || []);
     pintarFicha(r.lead, S.agendamentosLead);
@@ -868,7 +944,7 @@
 
     const situacao = situacaoDe(l);
     p.situacao = situacao;
-    mudou(p, 'faixa', [situacao, l.atendente || '', l.motivo || ''].join('|'), () => {
+    mudou(p, 'faixa', [situacao, l.atendente || '', l.motivo || '', euMesmo()].join('|'), () => {
       p.faixa.dataset.situacao = situacao;
       // O texto fica em até duas linhas; inteiro, ele aparece ao passar o mouse e na ficha.
       const texto = (desenho, forte, resto) => h('div', { class: 'cv-situacao-texto' }, desenho,
@@ -880,7 +956,7 @@
           botao('Iniciar atendimento', { classe: 'btn-primario cv-acao', icone: 'assumir', aoClicar: () => iniciarAtendimento(l.id) }));
       } else if (situacao === 'atendimento') {
         trocar(p.faixa,
-          texto(ic('fone'), l.atendente ? 'Atendendo: ' + l.atendente : 'Em atendimento'),
+          texto(ic('fone'), l.atendente ? (l.atendente === euMesmo() ? 'Você está atendendo' : 'Atendendo: ' + l.atendente) : 'Em atendimento'),
           botao('Encerrar e devolver ao assistente', { classe: 'cv-btn-linha cv-acao', aoClicar: () => encerrarAtendimento(l.id) }));
       } else {
         trocar(p.faixa, texto(icone('assistente'), 'Assistente respondendo.', 'Ele cuida desta conversa sozinho.'));
@@ -1055,13 +1131,50 @@
     return MIDIAS[m.tipo] ? MIDIAS[m.tipo].palavra : 'mensagem';
   }
 
+  // juntarHistorico soma ao que veio agora as mensagens mais antigas que já passaram
+  // pela tela. O programa manda só as últimas; o resto fica no banco de dados.
+  function juntarHistorico(p, atual) {
+    const primeiroN = atual.length && atual[0].n ? atual[0].n : 0;
+    if (!primeiroN) return atual;
+    for (const m of atual) if (m.n) p.vistas.set(m.n, m);
+    const antes = [];
+    for (const [n, m] of p.vistas) if (n < primeiroN) antes.push(m);
+    antes.sort((a, b) => a.n - b.n);
+    return antes.length ? antes.concat(atual) : atual;
+  }
+
+  // buscarAnteriores traz do banco o trecho anterior da conversa e mantém a leitura no lugar.
+  async function buscarAnteriores(p) {
+    let menor = 0;
+    for (const n of p.vistas.keys()) if (!menor || n < menor) menor = n;
+    if (!menor) return;
+    const r = await api.get('/api/lead/historico?id=' + encodeURIComponent(p.id) + '&antes=' + menor);
+    if (!tela || painel !== p) return;
+    for (const m of r.mensagens || []) if (m.n) p.vistas.set(m.n, m);
+    p.temAnteriores = !!r.tem_mais;
+    const cx = p.msgs;
+    const ateOFim = cx.scrollHeight - cx.scrollTop;
+    pintarMensagens((S.lead && S.lead.historico) || []);
+    cx.scrollTop = cx.scrollHeight - ateOFim;
+  }
+
   function pintarMensagens(historico) {
     const p = painel;
     const cx = p.msgs;
     const primeira = !p.pintou;
     // Mede na hora: só acompanha o fim se a pessoa está mesmo no fim da conversa.
     const noFim = primeira || p.irAoFim || distanciaDoFim(cx) < 48;
-    const entradas = entradasDe(historico, nomeDe(S.lead || resumoDe(p.id)));
+    const entradas = entradasDe(juntarHistorico(p, historico), nomeDe(S.lead || resumoDe(p.id)));
+    if (p.temAnteriores) {
+      entradas.unshift({
+        chave: 'anteriores', marca: '',
+        criar: () => {
+          const b = h('button', { type: 'button', class: 'btn btn-suave' }, ic('historico'), h('span', { text: 'Ver mensagens anteriores' }));
+          b.addEventListener('click', () => ocupar(b, () => buscarAnteriores(p)));
+          return h('div', { class: 'cv-anteriores' }, b);
+        },
+      });
+    }
 
     // Sai o que não existe mais (o programa guarda só as mensagens mais recentes).
     const vivas = new Set(entradas.map((e) => e.chave));
@@ -1202,8 +1315,6 @@
       'X-Tipo': encodeURIComponent(opc.tipo || 'arquivo'),
     };
     if (opc.legenda) cabecalhos['X-Legenda'] = encodeURIComponent(opc.legenda);
-    const nome = nomeAtendente();
-    if (nome) cabecalhos['X-Atendente'] = encodeURIComponent(nome);
     return pedir('/api/enviar-arquivo', { method: 'POST', headers: cabecalhos, body: corpo });
   }
 
@@ -1230,8 +1341,6 @@
     const r = rascunho(id);
     const texto = p.texto.value.trim();
     if (!texto && !r.anexos.length) { p.texto.focus(); return; }
-    const nome = nomeAtendente();
-    const comNome = (corpo) => { if (nome) corpo.atendente = nome; return corpo; };
     travarEnvio(p, true);
     limparAviso();
     let enviou = false;
@@ -1251,11 +1360,11 @@
         }
         if (legenda) solto = legenda;
         if (solto) {
-          await api.post('/api/responder', comNome({ id, texto: solto }));
+          await api.post('/api/responder', { id, texto: solto });
           limparTexto(id);
         }
       } else {
-        await api.post('/api/responder', comNome({ id, texto }));
+        await api.post('/api/responder', { id, texto });
         enviou = true;
         limparTexto(id);
       }
@@ -1490,7 +1599,7 @@
 
     // Situação: quem está com a conversa.
     const situacao = situacaoDe(l);
-    const eu = nomeAtendente();
+    const eu = euMesmo();
     mudou(f, 'situacao', [situacao, l.atendente || '', l.motivo || '', eu].join('|'), () => {
       let selo;
       let frase;
@@ -1499,7 +1608,8 @@
         frase = 'O assistente transferiu. A conversa espera uma pessoa da equipe.';
       } else if (situacao === 'atendimento') {
         selo = h('span', { class: 'cv-selo cv-selo-atend' }, ic('fone'), 'Em atendimento');
-        frase = (l.atendente ? l.atendente + ' está atendendo.' : 'Uma pessoa da equipe está atendendo.') + ' O assistente fica parado nesta conversa.';
+        const quem = l.atendente ? (l.atendente === eu ? 'Você' : l.atendente) : 'Uma pessoa da equipe';
+        frase = quem + ' está atendendo. O assistente fica parado nesta conversa.';
       } else {
         selo = h('span', { class: 'cv-selo cv-selo-ia' }, icone('assistente'), 'Com o assistente');
         frase = 'O assistente responde sozinho. Se precisar, ele transfere para a equipe.';
@@ -1508,17 +1618,7 @@
         h('div', null, selo),
         h('p', { class: 'cv-frase', text: frase }),
         situacao !== 'ia' && l.motivo ? h('dl', { class: 'cv-dados' }, h('dt', { text: 'Motivo da transferência' }), h('dd', { text: l.motivo })) : null,
-        h('p', { class: 'cv-meu-nome' },
-          h('span', { text: eu ? 'Você aparece aqui como ' + eu + '. O cliente não vê o seu nome.' : 'Você ainda não disse o seu nome.' }),
-          ' ',
-          h('button', {
-            type: 'button', class: 'cv-link',
-            onclick: async () => {
-              await pedirNome(eu);
-              const atual = painel === p ? (S.lead && S.lead.id === p.id ? S.lead : resumoDe(p.id)) : null;
-              if (atual) pintarFicha(atual, S.lead && S.lead.id === p.id ? S.agendamentosLead : null);
-            },
-          }, eu ? 'Trocar nome' : 'Dizer meu nome')));
+        eu ? h('p', { class: 'cv-meu-nome', text: 'Você aparece aqui como ' + eu + '. O cliente não vê o seu nome.' }) : null);
     });
 
     // Temperatura: pontos, classificação e etapa.
@@ -1606,15 +1706,29 @@
         teclas: [',', ';', 'Tab', 'Enter'], limpar: limparEtiqueta, sugestoes, max: 12,
         aoMudar: (lista) => salvarEtiquetas(p, lista),
       });
-      trocar(f.etiquetas.corpo, f.campoEtq,
-        h('p', { class: 'ajuda', text: 'Use para separar os clientes. Por exemplo: orçamento, cliente antigo.' }));
+      f.ajudaEtq = h('p', { class: 'ajuda' });
+      trocar(f.etiquetas.corpo, f.campoEtq, f.ajudaEtq);
+      pintarAjudaEtiquetas(l);
       return;
     }
+    pintarAjudaEtiquetas(l);
     const marca = JSON.stringify(doServidor);
     if (marca !== f.vistoEtq && !f.salvando && !digitando) {
       f.vistoEtq = marca;
       f.campoEtq.definir(doServidor);
     }
+  }
+
+  // pintarAjudaEtiquetas diz quais etiquetas foram criadas pela IA durante o atendimento.
+  function pintarAjudaEtiquetas(l) {
+    const f = painel && painel.ficha;
+    if (!f || !f.ajudaEtq) return;
+    const atuais = (l.etiquetas || []).map(String);
+    const daIA = (l.etiquetas_ia || []).map(String).filter((e) => atuais.includes(e));
+    const texto = daIA.length
+      ? 'A IA criou durante o atendimento: ' + daIA.join(', ') + '. Se você tirar uma, ela não volta.'
+      : 'Use para separar os clientes. A IA também cria etiquetas sozinha durante o atendimento.';
+    if (f.ajudaEtq.textContent !== texto) f.ajudaEtq.textContent = texto;
   }
 
   // salvarEtiquetas grava a lista a cada mudança, uma gravação de cada vez e na ordem.
@@ -1626,7 +1740,11 @@
         const r = await api.post('/api/lead/etiquetas', { id: p.id, etiquetas: lista });
         const limpas = Array.isArray(r.etiquetas) ? r.etiquetas.map(String) : lista;
         f.vistoEtq = JSON.stringify(limpas);
-        if (S.lead && S.lead.id === p.id) S.lead.etiquetas = limpas.slice();
+        if (S.lead && S.lead.id === p.id) {
+          S.lead.etiquetas = limpas.slice();
+          if (Array.isArray(r.etiquetas_ia)) S.lead.etiquetas_ia = r.etiquetas_ia.map(String);
+          if (painel === p) pintarAjudaEtiquetas(S.lead);
+        }
         const resumo = resumoDe(p.id);
         if (resumo) resumo.etiquetas = limpas.slice();
         if (painel === p && f.salvando === 1 && JSON.stringify(limpas) !== JSON.stringify(lista)) f.campoEtq.definir(limpas);
@@ -1639,5 +1757,6 @@
     });
   }
 
-  TELAS.conversas = { montar, atualizar, sair };
+  // avatar e copiarTexto também servem à aba Contatos.
+  TELAS.conversas = { montar, atualizar, sair, avatar, copiarTexto };
 })();

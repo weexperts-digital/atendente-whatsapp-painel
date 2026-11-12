@@ -646,7 +646,7 @@ func (a *App) trabalhar(id string) {
 			return
 		}
 		cfg := a.cfg.clonar()
-		entrada := montarEntrada(anteriores, novas, l)
+		entrada := montarEntrada(anteriores, novas, l, a.etiquetasEmUso())
 		a.mu.Unlock()
 
 		// Tudo relido do disco a cada mensagem: textos, materiais e agenda.
@@ -723,6 +723,7 @@ func (a *App) trabalhar(id string) {
 			return
 		}
 		aplicarSaida(l, saida)
+		l.etiquetasDaIA(saida.Lead.Etiquetas, a.etiquetasEmUso())
 		quente := l.Classificacao == "quente"
 		transbordo := saida.Transbordo
 		// Lead quente sempre chama uma pessoa. Com a agenda ligada, quem decide e o

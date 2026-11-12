@@ -34,7 +34,7 @@ for ($i = 0; $i -lt 30; $i++) {
     if (Test-Path "porta.txt") {
         $porta = (Get-Content "porta.txt").Trim()
         try {
-            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$porta/api/estado" | Out-Null
+            Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$porta/api/sessao" | Out-Null
             Write-Host "Atendente no ar: http://localhost:$porta"
             exit 0
         } catch { }

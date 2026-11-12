@@ -1,8 +1,14 @@
 'use strict';
 // Casca do painel: rotas, barra de situação, busca periódica e a configuração inicial.
 
-const ABAS = ['conversas', 'agenda', 'relatorio', 'assistente', 'conhecimento', 'treinar', 'ajustes'];
+const ABAS = ['conversas', 'contatos', 'agenda', 'relatorio', 'assistente', 'conhecimento', 'treinar', 'ajustes'];
 const ARQUIVOS_TEXTO = ['personalidade', 'cerebro', 'regras', 'aprendizados'];
+// Abas que só administradores veem. O programa também barra as rotas delas.
+const ABAS_DE_ADMIN = ['assistente', 'conhecimento', 'treinar', 'ajustes'];
+
+function abaPermitida(aba) {
+  return !ABAS_DE_ADMIN.includes(aba) || ACESSO.pode('admin');
+}
 
 let telaAtual = null;
 let batidas = 0;
@@ -103,7 +109,7 @@ function lerRota() {
   const partes = location.hash.replace(/^#\/?/, '').split('/');
   let aba = ABAS.includes(partes[0]) ? partes[0] : 'conversas';
   let sub = partes[1] || '';
-  if (!telaExiste(aba)) { aba = 'conversas'; sub = ''; }
+  if (!telaExiste(aba) || !abaPermitida(aba)) { aba = 'conversas'; sub = ''; }
   return { aba, sub };
 }
 
@@ -165,6 +171,10 @@ let seloPintado = false;
 
 function montarChave() {
   chavePrincipal = chave('Atendente pausado', false, async (novo, b) => {
+    if (!ACESSO.pode('admin')) {
+      toast('Só um administrador liga ou pausa o atendente.', 'erro');
+      return;
+    }
     b.disabled = true;
     try {
       await api.post('/api/liga', { ligar: novo });
@@ -204,7 +214,7 @@ function pintarEstado() {
   const cerebro = $('#est-cerebro');
   if (cerebro.dataset.modo !== e.modo) {
     cerebro.dataset.modo = e.modo || '';
-    const nomes = { claude: 'Cérebro: Claude', api: 'Cérebro: API', teste: 'Modo teste, sem Claude' };
+    const nomes = { claude: 'Cérebro: Claude', openai: 'Cérebro: ChatGPT', api: 'Cérebro: API', teste: 'Modo teste, sem Claude' };
     trocar(cerebro, icone('ia'), nomes[e.modo] || '');
   }
 
@@ -217,14 +227,27 @@ function pintarEstado() {
 
   const avisos = [];
   if (e.erro) avisos.push(e.erro);
-  if (e.erro_cerebro) avisos.push('O cérebro falhou na última tentativa: ' + e.erro_cerebro);
+  // IA sem login: explica em uma frase e oferece o botão que resolve.
+  const iaFora = !!e.aviso_cerebro || (!!e.ia && e.ia.instalado && !e.ia.conectado);
+  const podeConectar = iaFora && ACESSO.pode('admin');
+  if (iaFora) {
+    const causas = {
+      openai_chave: 'A OpenAI não aceitou a chave guardada',
+      openai_credito: 'A conta da OpenAI está sem crédito',
+      openai_modelo: 'O modelo escolhido não existe na conta da OpenAI',
+    };
+    avisos.push((causas[(e.ia || {}).motivo] || 'A IA está desconectada')
+      + ', por isso o assistente não está respondendo. As conversas novas vão para a fila da equipe.'
+      + (podeConectar ? '' : ' Avise um administrador do painel.'));
+  } else if (e.erro_cerebro) avisos.push('O cérebro falhou na última tentativa: ' + e.erro_cerebro);
   const faixa = $('#faixa');
-  const marca = avisos.join('\n');
+  const marca = avisos.join('\n') + (podeConectar ? '\n[conectar]' : '');
   if (faixa.dataset.marca !== marca) {
     const estavaEscondida = faixa.hidden;
     faixa.dataset.marca = marca;
     faixa.hidden = !avisos.length;
-    trocar(faixa, avisos.length ? [icone('alerta'), h('div', null, avisos.map((a) => h('p', { text: a })))] : []);
+    trocar(faixa, avisos.length ? [icone('alerta'), h('div', null, avisos.map((a) => h('p', { text: a }))),
+      podeConectar ? botao('Conectar a IA', { classe: 'btn-primario faixa-acao', icone: 'ia', aoClicar: () => CONEXAO.abrir() }) : null] : []);
     if (avisos.length && estavaEscondida) animar(faixa, { opacity: [0, 1], y: [-8, 0] }, { duration: 0.2 });
   }
 
@@ -325,6 +348,7 @@ function criarBlocoWhats() {
 // ---------- Configuração inicial ----------
 
 const PASSOS = [
+  { id: 'ia', rotulo: 'IA' },
   { id: 'negocio', rotulo: 'Seu negócio' },
   { id: 'assistente', rotulo: 'Seu assistente' },
   { id: 'avisos', rotulo: 'Avisos' },
@@ -347,7 +371,8 @@ async function abrirInicio() {
   }
   if (dlg.open) return;
   const c = S.config;
-  S.inicio.passo = 0;
+  // Quem já está com a IA conectada começa direto no negócio.
+  S.inicio.passo = S.estado && S.estado.ia && S.estado.ia.conectado ? 1 : 0;
   S.inicio.dados = {
     negocio: c.negocio || '', segmento: c.segmento || '', cidade: c.cidade || '',
     horario: c.horario || '', produtos: c.produtos || '',
@@ -366,12 +391,13 @@ async function abrirInicio() {
         h('span', { class: 'marca-nome', text: 'Atendente IA' })),
       botao('Sair da configuração', { classe: 'btn-fantasma', icone: 'fechar', aoClicar: fecharInicio })),
     passos, corpo, pe));
-  inicio = { passos, corpo, pe, whats: null, textoContinuar: null, resumoWhats: null, passoPintado: null };
+  inicio = { passos, corpo, pe, whats: null, conexao: null, textoContinuar: null, resumoWhats: null, passoPintado: null };
   abrirDialogo(dlg, { telaCheia: true });
   pintarPasso();
 }
 
 function fecharInicio() {
+  if (inicio && inicio.conexao) { inicio.conexao.parar(); inicio.conexao = null; }
   S.inicio.dispensado = true;
   const dlg = $('#inicio');
   if (dlg.open) dlg.close();
@@ -394,6 +420,7 @@ function pintarPasso() {
   const d = S.inicio.dados;
   const corpo = inicio.corpo;
   inicio.whats = null;
+  if (inicio.conexao) { inicio.conexao.parar(); inicio.conexao = null; }
   inicio.textoContinuar = null;
   inicio.resumoWhats = null;
 
@@ -405,7 +432,24 @@ function pintarPasso() {
   let continuar = null;
   const extras = [];
 
-  if (PASSOS[i].id === 'negocio') {
+  if (PASSOS[i].id === 'ia') {
+    const lugar = h('div', { class: 'inicio-ia' });
+    trocar(corpo,
+      titulo('Conecte a IA do seu assistente'),
+      h('p', { class: 'descricao', text: 'É a IA que lê as mensagens e responde os seus clientes. Ela usa a sua conta do Claude. Você entra uma vez e ela continua conectada.' }),
+      lugar);
+    // Um botão principal por tela: enquanto a IA não conecta, o principal é "Conectar o Claude".
+    continuar = botao('Conectar depois', { classe: 'btn-suave', aoClicar: avancar });
+    const botaoSeguir = continuar;
+    const textoBotao = continuar.querySelector('span');
+    inicio.conexao = CONEXAO.painel(lugar, {
+      aoMudar: (r) => {
+        textoBotao.textContent = r.conectado ? 'Continuar' : 'Conectar depois';
+        botaoSeguir.classList.toggle('btn-primario', !!r.conectado);
+        botaoSeguir.classList.toggle('btn-suave', !r.conectado);
+      },
+    });
+  } else if (PASSOS[i].id === 'negocio') {
     trocar(corpo,
       titulo('Conte sobre o seu negócio'),
       h('p', { class: 'descricao', text: 'Em poucos minutos o seu assistente está respondendo no WhatsApp. Comece dizendo o que você vende.' }),
@@ -539,10 +583,29 @@ function atualizarInicio() {
 
 // ---------- Partida ----------
 
+// aplicarAcesso mostra a conta de quem entrou e esconde o que o acesso dela não alcança.
+function aplicarAcesso() {
+  ACESSO.pintarConta($('#conta'));
+  const admin = ACESSO.pode('admin');
+  document.querySelectorAll('.nav a').forEach((a) => { a.hidden = !abaPermitida(a.dataset.aba); });
+  const whats = $('#est-whats');
+  if (!admin && whats) {
+    whats.removeAttribute('href');
+    whats.removeAttribute('title');
+  }
+  if (!admin) chavePrincipal.setAttribute('aria-disabled', 'true');
+}
+
+// iniciar prepara o tema e espera alguém entrar. O painel só é montado depois.
 function iniciar() {
-  montarChave();
   pintarBotaoTema();
   $('#btn-tema').addEventListener('click', () => aplicarTema(temaAtual() === 'light' ? 'dark' : 'light'));
+  ACESSO.entrar().then(partir);
+}
+
+function partir() {
+  montarChave();
+  aplicarAcesso();
 
   const dlg = $('#inicio');
   dlg.addEventListener('cancel', () => { S.inicio.dispensado = true; });
@@ -556,12 +619,12 @@ function iniciar() {
   window.addEventListener('beforeunload', (ev) => {
     if (temAlteracoes()) { ev.preventDefault(); ev.returnValue = ''; }
   });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) pulsar(); });
-  setInterval(() => { if (!document.hidden && !pulsando) pulsar(); }, 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && SESSAO.usuario) pulsar(); });
+  setInterval(() => { if (!document.hidden && !pulsando && SESSAO.usuario) pulsar(); }, 3000);
 
   navegar();
   pulsar().then(() => {
-    if (S.estado && !S.estado.salvo && !S.inicio.dispensado) abrirInicio();
+    if (ACESSO.pode('admin') && S.estado && !S.estado.salvo && !S.inicio.dispensado) abrirInicio();
   });
 }
 
